@@ -10,6 +10,7 @@ include("utils.jl")
 
 include("cfg_enumerator.jl")
 include("cfg_priority_enumerator.jl")
+include("genetic_search_iterator.jl")
 
 include("csg_enumerator.jl")
 include("csg_priority_enumerator.jl")
@@ -21,7 +22,7 @@ export
   ExpressionIterator,
   ContextFreeEnumerator,
   ContextFreePriorityEnumerator,
-  
+  GeneticSearchIterator,
   ContextSensitiveEnumerator,
   ContextSensitivePriorityEnumerator,
   
