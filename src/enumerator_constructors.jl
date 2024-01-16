@@ -15,7 +15,7 @@ function get_bfs_enumerator(
     derivation_heuristic::Function=(a,_) -> a
 )::ContextSensitivePriorityEnumerator
     expand_function(node, grammar, max_depth, max_holes, context) = _expand(node, grammar, max_depth, max_holes, context, hole_heuristic, derivation_heuristic)
-    return ContextSensitivePriorityEnumerator(cfg2csg(grammar), max_depth, max_size, bfs_priority_function, expand_function, sym)
+    return ContextSensitivePriorityEnumerator(cfg2csg(grammar), max_depth, max_size, bfs_priority_function, expand_function, sym, SearchStatistics(grammar))
 end
 
 """
@@ -32,7 +32,7 @@ function get_bfs_enumerator(
     derivation_heuristic::Function=(a,_) -> a
 )::ContextSensitivePriorityEnumerator
     expand_function(node, grammar, max_depth, max_holes, context) = _expand(node, grammar, max_depth, max_holes, context, hole_heuristic, derivation_heuristic)
-    return ContextSensitivePriorityEnumerator(grammar, max_depth, max_size, bfs_priority_function, expand_function, sym)
+    return ContextSensitivePriorityEnumerator(grammar, max_depth, max_size, bfs_priority_function, expand_function, sym, SearchStatistics(grammar))
 end
 
 dfs_priority_function(::Grammar, ::AbstractRuleNode, parent_value::Union{Real, Tuple{Vararg{Real}}}) = parent_value - 1
@@ -52,7 +52,7 @@ function get_dfs_enumerator(
     derivation_heuristic::Function=(a,_) -> a
 )::ContextSensitivePriorityEnumerator
     expand_function(node, grammar, max_depth, max_holes, context) = _expand(node, grammar, max_depth, max_holes, context, hole_heuristic, derivation_heuristic)
-    return ContextSensitivePriorityEnumerator(cfg2csg(grammar), max_depth, max_size, dfs_priority_function, expand_function, sym)
+    return ContextSensitivePriorityEnumerator(cfg2csg(grammar), max_depth, max_size, dfs_priority_function, expand_function, sym, SearchStatistics(grammar))
 end
 
 """
@@ -69,7 +69,7 @@ function get_dfs_enumerator(
         derivation_heuristic::Function=(a,_) -> a    
 )::ContextSensitivePriorityEnumerator
     expand_function(node, grammar, max_depth, max_holes, context) = _expand(node, grammar, max_depth, max_holes, context, hole_heuristic, derivation_heuristic)
-    return ContextSensitivePriorityEnumerator(grammar, max_depth, max_size, dfs_priority_function, expand_function, sym)
+    return ContextSensitivePriorityEnumerator(grammar, max_depth, max_size, dfs_priority_function, expand_function, sym, SearchStatistics(grammar))
 end
 
 """
@@ -100,7 +100,7 @@ function get_most_likely_first_enumerator(
     derivation_heuristic::Function=(a,_) -> a
 )::ContextSensitivePriorityEnumerator
     expand_function(node, grammar, max_depth, max_holes, context) = _expand(node, grammar, max_depth, max_holes, context, hole_heuristic, derivation_heuristic)
-    return ContextSensitivePriorityEnumerator(cfg2csg(grammar), max_depth, max_size, most_likely_priority_function, expand_function, sym)
+    return ContextSensitivePriorityEnumerator(cfg2csg(grammar), max_depth, max_size, most_likely_priority_function, expand_function, sym, SearchStatistics(grammar))
 end
 
 """
@@ -118,5 +118,5 @@ function get_most_likely_first_enumerator(
     derivation_heuristic::Function=(a,_) -> a
 )::ContextSensitivePriorityEnumerator
     expand_function(node, grammar, max_depth, max_holes, context) = _expand(node, grammar, max_depth, max_holes, context, hole_heuristic, derivation_heuristic)
-    return ContextSensitivePriorityEnumerator(grammar, max_depth, max_size, most_likely_priority_function, expand_function, sym)
+    return ContextSensitivePriorityEnumerator(grammar, max_depth, max_size, most_likely_priority_function, expand_function, sym, SearchStatistics(grammar))
 end

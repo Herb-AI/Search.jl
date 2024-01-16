@@ -8,6 +8,10 @@ using HerbConstraints
 using HerbData
 using HerbInterpret
 
+include("cp_profiler/visualize_rule_node.jl")
+
+include("search_statistics.jl")
+
 include("sampling_grammar.jl")
 include("enumerator_constructors.jl")
 

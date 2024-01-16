@@ -67,14 +67,17 @@ function search_rulenode(
             end
         end
         if !falsified
+            println(hypotheses.stats);
             return (h, expr)
         end
 
         # Check stopping conditions
         if check_enumerations && i > max_enumerations || check_time && time() - start_time > max_time
+            println(hypotheses.stats);
             return nothing
         end
     end
+    println(hypotheses.stats);
     return nothing
 end
 
@@ -227,6 +230,8 @@ function search_best(
             best_error = total_error
             best_program = expr
         end
+
+        # Notify statistics for an Update
 
         # Check stopping conditions
         if check_enumerations && i > max_enumerations || check_time && time() - start_time > max_time
