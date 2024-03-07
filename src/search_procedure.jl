@@ -15,6 +15,7 @@ At the moment there are two possible outcomes:
 Synthesize a program that satisfies the maximum number of examples in the problem.
         - problem                 - The problem definition with IO examples
         - iterator                - The iterator that will be used
+        - evaluator               - The evaluator that will be used to score the programs
         - shortcircuit            - Whether to stop evaluating after finding a single example that fails, to speed up the [synth](@ref) procedure. If true, the returned score is an underapproximation of the actual score.
         - allow_evaluation_errors - Whether the search should crash if an exception is thrown in the evaluation
         - mod                     - A module containing definitions for the functions in the grammar that do not exist in Main
@@ -23,7 +24,8 @@ Returns a tuple of the rulenode representing the solution program and a synthres
 """
 function synth(
     problem::Problem,
-    iterator::ProgramIterator; 
+    iterator::ProgramIterator;
+    evaluator::Function=evaluate,
     shortcircuit::Bool=true, 
     allow_evaluation_errors::Bool=false,
     mod::Module=Main
@@ -39,7 +41,7 @@ function synth(
         expr = rulenode2expr(candidate_program, iterator.grammar)
 
         # Evaluate the expression
-        score = evaluate(problem, expr, symboltable, shortcircuit=shortcircuit, allow_evaluation_errors=allow_evaluation_errors)
+        score = evaluator(problem, expr, symboltable, shortcircuit=shortcircuit, allow_evaluation_errors=allow_evaluation_errors)
         if score == 1
             return (candidate_program, optimal_program)
         elseif score >= best_score
