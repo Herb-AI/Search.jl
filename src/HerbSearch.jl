@@ -35,6 +35,7 @@ include("genetic_functions/mutation.jl")
 include("genetic_functions/crossover.jl")
 include("genetic_functions/select_parents.jl")
 include("genetic_search_iterator.jl")
+include("smallest_subset.jl")
 
 include("random_iterator.jl")
 
@@ -52,6 +53,7 @@ export
   derivation_heuristic,
 
   synth,
+  smallest_subset,
   SynthResult,
   optimal_program,
   suboptimal_program,

@@ -41,6 +41,8 @@ function synth(
     best_program = nothing
     
     for (i, candidate_program) ∈ enumerate(iterator)
+        println("i: ",i)
+
         # Create expression from rulenode representation of AST
         expr = rulenode2expr(candidate_program, grammar)
 
