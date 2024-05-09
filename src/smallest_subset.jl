@@ -36,6 +36,18 @@ end
 
 @enum SubsetSearchResult full_cover=1 suboptimal_cover=2
 
+
+"""
+find_smallest_subset(U::Set{Number}, expr::Any, programs::Vector{Tuple{RuleNode, Set{Number}}})
+
+Finds smallest subset that satisfies the examples in U.
+
+Parameters:
+    - `U` - Set of examples needed to be satisified
+    - `programs` - Collection of programs and its corresponding set of examples it satisfies
+
+Returns the minimal set of programs and result if the algorithm managed to find coverage for all programs.
+"""
 function find_smallest_subset(
     U::Set{Number},
     programs::Vector{Tuple{RuleNode, Set{Number}}}
@@ -50,7 +62,20 @@ function find_smallest_subset(
     return (subset_programs, result)
 end
 
+"""
+smallest_subset(problem::Problem, iterator::ProgramIterator; shortcircuit::Bool=true, allow_evaluation_errors::Bool=false, max_time = typemax(Int), max_enumerations = typemax(Int), mod::Module=Main)::Tuple{Vector{RuleNode}, SubsetSearchResult}
 
+Synthesize a smallest subset of program that satisfies the maximum number of examples in the problem.
+        - problem                 - The problem definition with IO examples
+        - iterator                - The iterator that will be used
+        - shortcircuit            - Whether to stop evaluating after finding a single example that fails, to speed up the [synth](@ref) procedure. If true, the returned score is an underapproximation of the actual score.
+        - allow_evaluation_errors - Whether the search should crash if an exception is thrown in the evaluation
+        - max_time                - Maximum time that the iterator will run 
+        - max_enumerations        - Maximum number of iterations that the iterator will run 
+        - mod                     - A module containing definitions for the functions in the grammar that do not exist in Main
+
+Returns a tuple of vector of the rulenodes representing the smallest subset of programs and a synthresult that indicates if that program is optimal. `smallest_subset` uses `synth` which iterates over all possible programs until max_enumerations or max_time is reached and then finds smallest subset from the programs that satisfy maximum number of examples.
+"""
 function smallest_subset(
     problem::Problem,
     iterator::ProgramIterator;
@@ -86,14 +111,19 @@ function smallest_subset(
 end
 
 
-# Greedy Set Cover Algorithm
-# returns indexes of selected sets
+"""
+greedy_set_cover(U::Set{Number}, S::Vector{Set{Number}})::Tuple{Vector{Number}, SubsetSearchResult}
+
+Uses greedy polynomial time approximation algorithm to find a set covering for U using S. This function is used by find_smallest_subset function.
+        - U - represents the universe of elements to be covered.
+        - S - represents the collection of sets
+Returns the set C containing indexes of sets which is the approximate solution to the set cover problem.
+"""
 function greedy_set_cover(U::Set{Number}, S::Vector{Set{Number}})::Tuple{Vector{Number}, SubsetSearchResult}
-    U_covered = Set{Number}()  # Track the covered elements
-    C = Vector{Number}()  # Collection of indexes of selected sets 
+    U_covered = Set{Number}()
+    C = Vector{Number}() 
     
-    while U_covered != U  # Until all elements are covered
-        # Find the set with the maximum number of uncovered elements
+    while U_covered != U
         max_set = Set{Number}()
         idx = -1
         for (i, s) in enumerate(S)
@@ -106,8 +136,8 @@ function greedy_set_cover(U::Set{Number}, S::Vector{Set{Number}})::Tuple{Vector{
         if idx == -1
             return (C, suboptimal_cover)
         end
-        push!(C, idx)  # Add it to the cover
-        union!(U_covered, max_set)  # Update the covered elements
+        push!(C, idx) 
+        union!(U_covered, max_set)
     end
     
     return (C, full_cover)
