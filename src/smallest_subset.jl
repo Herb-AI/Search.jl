@@ -1,11 +1,3 @@
-struct EvaluationError <: Exception
-    expr::Expr
-    input::Dict{Symbol, Any}
-    error::Exception
-end
-
-Base.showerror(io::IO, e::EvaluationError) = print(io, "An exception was thrown while evaluating the expression $(e.expr) on input $(e.input): $(e.error)")
-
 """
 satisfies_examples(problem::Problem{Vector{IOExample}}, expr::Any, tab::SymbolTable; allow_evaluation_errors::Bool=false)
 
@@ -16,11 +8,11 @@ Optional parameters:
     - `shortcircuit` - Whether to stop evaluating after finding single example fails, to speed up the [synth](@ref) procedure. If true, the returned score is an underapproximation of the actual score.
     - `allow_evaluation_errors` - Whether the search should continue if an exception is thrown in the evaluation or throw the error
 
-Returns indexes of IOexamples it satisfies.
+Returns set of IOexamples indexes it satisfies.
 """
-function satisfies_examples(problem::Problem{Vector{IOExample}}, expr::Any, symboltable::SymbolTable; shortcircuit::Bool=true, allow_evaluation_errors::Bool=false)::Vector{Number}
+function satisfies_examples(problem::Problem{Vector{IOExample}}, expr::Any, symboltable::SymbolTable; shortcircuit::Bool=true, allow_evaluation_errors::Bool=false)::Set{Number}
     crashed = false
-    satisfied = Vector{Number}()
+    satisfied = Set{Number}()
     for (i, example) ∈ enumerate(problem.spec)
         try
             output = execute_on_input(symboltable, expr, example.in)
@@ -42,8 +34,22 @@ function satisfies_examples(problem::Problem{Vector{IOExample}}, expr::Any, symb
     return satisfied
 end
 
+@enum SubsetSearchResult full_cover=1 suboptimal_cover=2
 
-@enum SynthResult optimal_program=1 suboptimal_program=2
+function find_smallest_subset(
+    U::Set{Number},
+    programs::Vector{Tuple{RuleNode, Set{Number}}}
+)::Tuple{Vector{RuleNode}, SubsetSearchResult}
+    sort!(programs, by=x -> length(x[2]), rev=true)
+    indexes, result = greedy_set_cover(U, map(t -> t[2], programs))
+
+    subset_programs = Vector{RuleNode}()
+    for idx in indexes
+        push!(subset_programs, programs[idx][1])
+    end
+    return (subset_programs, result)
+end
+
 
 function smallest_subset(
     problem::Problem,
@@ -53,35 +59,57 @@ function smallest_subset(
     max_time = typemax(Int),
     max_enumerations = typemax(Int),
     mod::Module=Main
-)::Vector{Tuple{RuleNode, Vector{Number}}}
+)::Tuple{Vector{RuleNode}, SubsetSearchResult}
     start_time = time()
-    symboltable :: SymbolTable = SymbolTable(iterator.grammar, mod)
+    grammar = get_grammar(iterator.solver)
+    symboltable :: SymbolTable = SymbolTable(grammar, mod)
 
-    programs = Vector{Tuple{RuleNode, Vector{Number}}}()
+    programs = Vector{Tuple{RuleNode, Set{Number}}}()
 
     for (i, candidate_program) ∈ enumerate(iterator)
-        println("i: ",i)
-        expr = rulenode2expr(candidate_program, iterator.grammar)
+        expr = rulenode2expr(candidate_program, grammar)
         correct_examples = satisfies_examples(problem, expr, symboltable, shortcircuit=shortcircuit, allow_evaluation_errors=allow_evaluation_errors)
-        # println("length(correct_examples): ", length(correct_examples))
+
         if length(correct_examples) == length(problem.spec)
-            println("return - all correct")
-            return Vector{RuleNode}([(candidate_program, correct_examples)])
+            candidate_program = freeze_state(candidate_program)
+            return Vector{RuleNode}([candidate_program])
         elseif length(correct_examples) > 0
-            println("push to programs")
+            candidate_program = freeze_state(candidate_program)
             push!(programs, (candidate_program, correct_examples))
         end
+
         if i > max_enumerations || time() - start_time > max_time
-            println("time limit or max enums")
             break;
         end
-        # println("end")
     end
-    # println("endloop")
-    # for p in programs
-    #     println(rulenode2expr(p, iterator.grammar))
-    # end
-    # println("programs")
-    # println(programs)
-    return programs
+    return find_smallest_subset(Set{Number}(1:length(problem.spec)), programs)
 end
+
+
+# Greedy Set Cover Algorithm
+# returns indexes of selected sets
+function greedy_set_cover(U::Set{Number}, S::Vector{Set{Number}})::Tuple{Vector{Number}, SubsetSearchResult}
+    U_covered = Set{Number}()  # Track the covered elements
+    C = Vector{Number}()  # Collection of indexes of selected sets 
+    
+    while U_covered != U  # Until all elements are covered
+        # Find the set with the maximum number of uncovered elements
+        max_set = Set{Number}()
+        idx = -1
+        for (i, s) in enumerate(S)
+            if length(setdiff(s, U_covered)) > length(max_set)
+                max_set = s
+                idx = i
+            end
+        end
+
+        if idx == -1
+            return (C, suboptimal_cover)
+        end
+        push!(C, idx)  # Add it to the cover
+        union!(U_covered, max_set)  # Update the covered elements
+    end
+    
+    return (C, full_cover)
+end
+

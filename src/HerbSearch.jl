@@ -54,6 +54,8 @@ export
 
   synth,
   smallest_subset,
+  greedy_set_cover,
+  find_smallest_subset,
   SynthResult,
   optimal_program,
   suboptimal_program,

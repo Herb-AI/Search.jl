@@ -1,3 +1,4 @@
+
 @testset verbose=true "Search procedure" begin
     g₁ = @csgrammar begin
         Number = |(1:2)
@@ -6,40 +7,76 @@
         Number = Number * Number
     end
 
-    @testset "Search" begin
-        problem = Problem([IOExample(Dict(:x => x), 2x+1) for x ∈ 1:5])
-        iterator = BFSIterator(g₁, :Number, max_depth=5)
-        solution, flag = synth(problem, iterator)
-        # program = rulenode2expr(solution, g₁)
+    # @testset "Search" begin
+    #     problem = Problem([IOExample(Dict(:x => x), 2x+4) for x ∈ 1:5])
+    #     iterator = BFSIterator(g₁, :Number, max_depth=5)
+    #     solution = smallest_subset(problem, iterator, max_enumerations=65)
+    #     for (s, n) in solution
+    #         println(rulenode2expr(s, g₁))
+    #         # println(s)
+    #     end
+    #     println(solution)
+    #     # program = rulenode2expr(solution, g₁)
+    #     # hello("world")
+    #     @test 13 == 2*6+1
+    # end
 
-        @test 13 == 2*6+1
+    @testset "smallest_subset" begin
+        rule = RuleNode(1, Vector())
+
+        data::Vector{Tuple{RuleNode, Set{Number}}}= [
+            (RuleNode(1, Vector()), Set{Number}([1, 2, 3])),
+            (RuleNode(2, Vector()), Set{Number}([4, 5])),
+            (RuleNode(3, Vector()), Set{Number}([6, 7, 8, 9])),
+            (RuleNode(4, Vector()), Set{Number}([10])),
+            (RuleNode(5, Vector()), Set{Number}([11, 12, 13, 14, 15])),
+            (RuleNode(6, Vector()), Set{Number}([1, 2, 3, 4, 5])),
+            (RuleNode(7, Vector()), Set{Number}([0]))
+        ]     
+        subset_programs, result = find_smallest_subset(Set{Number}(1:15), data)
+
+        @test result == HerbSearch.full_cover
+        @test length(subset_programs) == 4
+        @test subset_programs[1].ind == 5
+        @test subset_programs[2].ind == 6
+        @test subset_programs[3].ind == 3
+        @test subset_programs[4].ind == 4
     end
 
-    # @testset "Search_best max_enumerations stopping condition" begin
-    #     problem = Problem([IOExample(Dict(:x => x), 2x-1) for x ∈ 1:5])
-    #     iterator = BFSIterator(g₁, :Number)
+    @testset "greedy_set_cover" begin
+        U = Set{Number}(1:9)
+        S = [
+            Set{Number}([1, 2, 3]),
+            Set{Number}([2, 4, 6]),
+            Set{Number}([3, 6, 7]),
+            Set{Number}([4, 5]),
+            Set{Number}([5, 6, 7, 8, 9]),
+        ]
 
-    #     solution = smallest_subset(problem, iterator)
-    #     # program = rulenode2expr(solution, g₁)
+        cover, res = greedy_set_cover(U, S)
 
-    #     @test 13 == 2*6+1
+        @test 5 in cover
+        @test 2 in cover
+        @test 1 in cover
+        @test res == HerbSearch.full_cover
+    end
 
-    #     # @test program == :x
-    #     # @test flag == suboptimal_program
-    # end
+    @testset "greedy_set_suboptimal_cover" begin
+        U = Set{Number}(1:10)
+        S = [
+            Set{Number}([1, 2, 3]),
+            Set{Number}([2, 4, 6]),
+            Set{Number}([3, 6, 7]),
+            Set{Number}([4, 5]),
+            Set{Number}([5, 6, 7, 8, 9]),
+        ]
 
-    # @testset "Search_best with errors in evaluation" begin
-    #     g₃ = @csgrammar begin
-    #         Number = 1
-    #         List = []
-    #         Index = List[Number]
-    #     end
-        
-    #     problem = Problem([IOExample(Dict(), x) for x ∈ 1:5])
-    #     iterator = BFSIterator(g₃, :Index, max_depth=2)
-    #     solution, flag = synth(problem, iterator, allow_evaluation_errors=true) 
+        cover, res = greedy_set_cover(U, S)
 
-    #     @test solution == RuleNode(3, [RuleNode(2), RuleNode(1)])
-    #     @test flag == suboptimal_program
-    # end
+        @test 5 in cover
+        @test 2 in cover
+        @test 1 in cover
+        @test res == HerbSearch.suboptimal_cover
+
+    end
 end
