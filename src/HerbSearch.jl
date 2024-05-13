@@ -38,6 +38,8 @@ include("genetic_search_iterator.jl")
 
 include("random_iterator.jl")
 
+include("greedy_pbe_iterator.jl")
+
 export 
   ProgramIterator,
   @programiterator,
@@ -73,6 +75,7 @@ export
   mean_squared_error,
   misclassification,
 
+  GreedyPBEIterator,
   GeneticSearchIterator,
   misclassification,
   validate_iterator,
