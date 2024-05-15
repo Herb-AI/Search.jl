@@ -38,6 +38,8 @@ include("genetic_search_iterator.jl")
 
 include("random_iterator.jl")
 
+include("splitting_grammar.jl")
+
 export 
   ProgramIterator,
   @programiterator,
@@ -77,5 +79,7 @@ export
   misclassification,
   validate_iterator,
   sample,
-  rand
+  rand,
+
+  split_grammar
 end # module HerbSearch
