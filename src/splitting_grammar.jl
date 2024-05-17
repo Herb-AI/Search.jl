@@ -33,10 +33,10 @@ function split_grammar(grammar::ContextSensitiveGrammar, start::Symbol)::Vector{
     # Create a sub-grammar from each path
     subgrammars = []
     for path in paths
-        g = @cfgrammar begin end
+        g = deepcopy(@csgrammar begin end)
         for edge in path
             for rule in edge.rules
-                g = add_rule!(deepcopy(g), rule)
+                add_rule!(g, rule)
             end
         end
         push!(subgrammars, g)
