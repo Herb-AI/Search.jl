@@ -1,53 +1,58 @@
-function split_grammar(grammar::ContextSensitiveGrammar, sym::Symbol, max_depth::Integer)::Vector{ContextSensitiveGrammar}
-    # TODO: check if this grammar is valid
+struct Edge
+    dependencies::Set{Symbol}
+    rules::Vector{Expr}
+end
 
-    if max_depth == 0
-        return [grammar]
+struct Node
+    edges::Vector{Edge}
+end    
+
+struct Graph
+    nodes::Dict{Symbol,Node}
+end
+
+function split_grammar(grammar::ContextSensitiveGrammar, start::Symbol)::Vector{ContextSensitiveGrammar}
+    # Build a graph representing the dependencies between the rules
+    graph = build_graph(grammar)
+
+    # TODO: Implement the splitting algorithm
+
+    return []
+end
+
+function build_graph(grammar::ContextSensitiveGrammar)::Graph
+    # Collect all symbols
+    symbols = Set{Symbol}()
+    for type in grammar.types
+        push!(symbols, type)
     end
-    
-    rules = find_rules(grammar, sym)
-    subgrammars = generate_subgrammars(grammar, rules)
 
-    if max_depth == 1
-        result = []
-        for (subgrammar, _) in subgrammars
-            cleanup_removed_rules!(subgrammar)
-            push!(result, subgrammar)
-        end
-        return result
-    end
+    # Create a node for each symbol
+    nodes = Dict{Symbol, Node}()
+    for symbol in symbols
+        nodes[symbol] = Node([])
+    end     
 
-    result = []
-    for (subgrammar, current) in subgrammars
-        for type in subgrammar.childtypes[current]
-            subgrammar_split = split_grammar(subgrammar, type, max_depth - 1)
-            for subsubgrammar in subgrammar_split
-                cleanup_removed_rules!(subsubgrammar)
-                push!(result, subsubgrammar)
+    # Place every rule on an edge with the correct dependencies
+    for i in 1:length(grammar.rules)
+        rule = :($(grammar.types[i]) = $(grammar.rules[i]))
+        dependencies = Set{Symbol}(grammar.childtypes[i])
+
+        # Check if an edge with the same dependencies already exists
+        matched = false
+        for edge in nodes[grammar.types[i]].edges
+            if edge.dependencies == dependencies
+                matched = true
+                push!(edge.rules, rule)
+                break
             end
         end
-    end
-    return result
-end
 
-function find_rules(grammar::ContextSensitiveGrammar, sym::Symbol)::Vector{Int}
-    return [i for (i, type) in enumerate(grammar.types) if type == sym && !grammar.isterminal[i]]
-end
-
-function generate_subgrammars(grammar::ContextSensitiveGrammar, rules::Vector{Int})::Vector{Tuple{ContextSensitiveGrammar, Int}}
-    subgrammars = []
-    for current in rules
-        subgrammar = deepcopy(grammar)
-        remove_rules(subgrammar, rules, current)
-        push!(subgrammars, (subgrammar, current))
-    end
-    return subgrammars
-end
-
-function remove_rules(grammar::ContextSensitiveGrammar, rules::Vector{Int}, current::Int)
-    for remove in rules
-        if remove != current
-            remove_rule!(grammar, remove)
+        # Create a new edge if no match was found
+        if !matched
+            push!(nodes[grammar.types[i]].edges, Edge(dependencies, [rule]))        
         end
     end
+    
+    return Graph(nodes)
 end
