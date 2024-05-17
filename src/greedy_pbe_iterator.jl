@@ -58,12 +58,11 @@ function Base.iterate(
             push!(programs, res[1])
         end
     end
-    println("________________") #to remove
+
     cover = Vector{Set{Int64}}()
     for p ∈ programs
         satisfies = Set{Int64}()
         expr = rulenode2expr(p, grammar)
-        println(expr)
         for (i, example) ∈ enumerate(subproblems)
             sym_table = SymbolTable(grammar)
             if evaluate(example, expr, sym_table) == 1
@@ -122,17 +121,15 @@ function dt2expr(tree::DecisionTreeInternal, terms::Vector{RuleNode}, preds::Vec
     t_branch = dt2expr(tree.true_branch, terms, preds, grammar)
     f_branch = dt2expr(tree.false_branch, terms, preds, grammar)
 
-    prog = quote
-        if $(cond)
+    prog = """if $(cond)
             $(t_branch)
         else
             $(f_branch)
-        end
-    end
-    return prog
+        end"""
+    return Meta.parse(prog)
 end
 
-function dt2expr(tree::DecisionTreeLeaf, terms::Vector{RuleNode}, preds::Vector{RuleNode}, grammar::AbstractGrammar)::Expr
+function dt2expr(tree::DecisionTreeLeaf, terms::Vector{RuleNode}, preds::Vector{RuleNode}, grammar::AbstractGrammar)
     term = rulenode2expr(terms[tree.term_index], grammar)
     return term
 end

@@ -34,16 +34,16 @@ function build_tree(pts::Set{Int64}, X::Vector{Vector{Float64}}, covers::Vector{
     end
 
     best_pred = nothing
-    best_gain = -1
+    lowest_entropy = floatmax(Float64)
     for pred_index ∈ preds
-        ig = information_gain(pts, pred_index, X, covers)
-        if ig > best_gain
-            best_gain = ig
+        entropy = conditional_entropy(pts, pred_index, X, covers)
+        if entropy < lowest_entropy
+            lowest_entropy = entropy
             best_pred = pred_index
         end
     end
 
-    if best_gain == -1
+    if lowest_entropy == floatmax(Float64)
         return nothing
     end
 
@@ -62,11 +62,11 @@ function build_tree(pts::Set{Int64}, X::Vector{Vector{Float64}}, covers::Vector{
 end
 
 
-function information_gain(pts::Set{Int64}, pred_index::Int64, X::Vector{Vector{Float64}}, covers::Vector{Set{Int64}})::Float64
+function conditional_entropy(pts::Set{Int64}, pred_index::Int64, X::Vector{Vector{Float64}}, covers::Vector{Set{Int64}})::Float64
     yes_points, no_points = split_by_predicate(pts, pred_index, X)
 
-    return length(yes_points) / length(pts) * entropy(yes_points, covers) +
-           length(no_points) / length(pts) * entropy(no_points, covers)
+    return (length(yes_points) / length(pts) * entropy(yes_points, covers) +
+            length(no_points) / length(pts) * entropy(no_points, covers))
 end
 
 
@@ -88,7 +88,9 @@ function entropy(pts::Set{Int64}, covers::Vector{Set{Int64}})::Float64
     ent = 0
     for i ∈ 1:length(covers)
         p = unconditional_prob(pts, i, covers)
-        ent += -p * log2(p)
+        if p != 0
+            ent += -p * log2(p)
+        end
     end
     return ent
 end
@@ -112,7 +114,9 @@ function conditional_prob(pt::Int64, pts::Set{Int64}, t::Int64, covers::Vector{S
     num = length(intersect(covers[t], pts))
     den = 0
     for cover ∈ covers
-        den += length(intersect(cover, pts))
+        if pt ∈ cover
+            den += length(intersect(cover, pts))
+        end
     end
 
     return num / den
