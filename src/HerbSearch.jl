@@ -38,6 +38,7 @@ include("genetic_search_iterator.jl")
 
 include("random_iterator.jl")
 
+include("decisiontree_unification/decision_tree.jl")
 include("greedy_pbe_iterator.jl")
 
 export 
