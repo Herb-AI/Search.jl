@@ -17,6 +17,7 @@ end
 
 struct State
     current::Set{Symbol}
+    escaped::Set{Symbol}
     used::Set{Edge}
 end
 
@@ -28,8 +29,8 @@ function split_grammar(grammar::ContextSensitiveGrammar, start::Symbol)::Vector{
     paths = []
     for edge in graph.edges
         edges = Set{Edge}([edge])
-        union!(edges, find_path(graph, State(Set([start]), Set()), edge.symbol))
-        union!(edges, find_path(graph, State(edge.dependencies, Set([edge])), :ε))
+        union!(edges, find_path(graph, State(Set([start]), Set([:ε, edge.symbol]), Set()), edge.symbol))
+        union!(edges, find_path(graph, State(edge.dependencies, Set([:ε]), Set([edge])), :ε))
         push!(paths, edges)
     end
 
@@ -68,20 +69,24 @@ function find_path(graph::Graph, start::State, target::Symbol)::Set{Edge}
         state = dequeue!(queue)
         
         # Check if the target is in the current state
-        if target in state.current && isempty(setdiff(state.current, Set([:ε, target])))
+        if target in state.current && isempty(setdiff(state.current, state.escaped))
             return state.used
         end
 
         # Enqueue all possible next states
         for node in state.current
-            if node == target || node == :ε
+            if node in state.escaped
                 continue
             end
             for edge in graph.nodes[node].edges
                 if !(edge in state.used)
                     new_current = union(setdiff(state.current, Set([node])), edge.dependencies)
                     new_used = union(state.used, Set([edge]))
-                    new_state = State(new_current, new_used)
+                    new_escaped = state.escaped
+                    if !(node in edge.dependencies)
+                        union!(new_escaped, Set([node]))
+                    end
+                    new_state = State(new_current, new_escaped, new_used)
                     enqueue!(queue, new_state)
                 end
             end
