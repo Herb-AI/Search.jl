@@ -1,3 +1,5 @@
+using DataStructures
+
 struct Edge
     symbol::Symbol
     dependencies::Set{Symbol}
@@ -13,6 +15,11 @@ struct Graph
     edges::Vector{Edge}
 end
 
+struct State
+    current::Set{Symbol}
+    used::Set{Edge}
+end
+
 function split_grammar(grammar::ContextSensitiveGrammar, start::Symbol)::Vector{ContextSensitiveGrammar}
     # Build a graph representing the dependencies between the rules
     graph = build_graph(grammar)
@@ -21,34 +28,67 @@ function split_grammar(grammar::ContextSensitiveGrammar, start::Symbol)::Vector{
     paths = []
     for edge in graph.edges
         edges = Set{Edge}([edge])
-        union!(edges, find_path(graph, start, edge.symbol))
-        for dependency in edge.dependencies
-            union!(edges, find_path(graph, dependency, nothing))
-        end
+        union!(edges, find_path(graph, State(Set([start]), Set()), edge.symbol))
+        union!(edges, find_path(graph, State(edge.dependencies, Set([edge])), :ε))
         push!(paths, edges)
     end
 
-    # TODO: Remove subsets
-
     # Create a sub-grammar from each path
     subgrammars = []
-    for path in paths
-        g = deepcopy(@csgrammar begin end)
-        for edge in path
-            for rule in edge.rules
-                add_rule!(g, rule)
+    for i in 1:length(paths)
+        # Check if the path is a subset of another path
+        subset = false
+        for j in i+1:length(paths)
+            if issubset(paths[i], paths[j])
+                subset = true
+                break
             end
         end
-        push!(subgrammars, g)
+        # Create a sub-grammar if the path is not a subset
+        if !subset
+            g = deepcopy(@csgrammar begin end)
+            for edge in paths[i]
+                for rule in edge.rules
+                    add_rule!(g, rule)
+                end
+            end
+            push!(subgrammars, g)
+        end
     end
 
     return subgrammars
 end
 
-function find_path(graph::Graph, start::Symbol, target::Union{Symbol,Nothing})::Set{Edge}
-    
-    # TODO: Find the shortest path from start to target
+function find_path(graph::Graph, start::State, target::Symbol)::Set{Edge}
+    # Breadth-first search
+    queue = Queue{State}()
+    enqueue!(queue, start)
 
+    while !isempty(queue)
+        state = dequeue!(queue)
+        
+        # Check if the target is in the current state
+        if target in state.current && isempty(setdiff(state.current, Set([:ε, target])))
+            return state.used
+        end
+
+        # Enqueue all possible next states
+        for node in state.current
+            if node == target || node == :ε
+                continue
+            end
+            for edge in graph.nodes[node].edges
+                if !(edge in state.used)
+                    new_current = union(setdiff(state.current, Set([node])), edge.dependencies)
+                    new_used = union(state.used, Set([edge]))
+                    new_state = State(new_current, new_used)
+                    enqueue!(queue, new_state)
+                end
+            end
+        end
+    end
+
+    # Return an empty set if no path was found
     return Set{Edge}()
 end
 
@@ -70,6 +110,9 @@ function build_graph(grammar::ContextSensitiveGrammar)::Graph
     for i in 1:length(grammar.rules)
         rule = :($(grammar.types[i]) = $(grammar.rules[i]))
         dependencies = Set{Symbol}(grammar.childtypes[i])
+        if grammar.childtypes[i] == []
+            push!(dependencies, :ε)
+        end
 
         # Check if an edge with the same dependencies already exists
         matched = false
@@ -88,6 +131,6 @@ function build_graph(grammar::ContextSensitiveGrammar)::Graph
             push!(nodes[grammar.types[i]].edges, edge)        
         end
     end
-    
+
     return Graph(nodes, edges)
 end
