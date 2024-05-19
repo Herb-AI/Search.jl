@@ -1,5 +1,3 @@
-using DataStructures
-
 struct Edge
     symbol::Symbol
     dependencies::Set{Symbol}
@@ -26,93 +24,28 @@ function split_grammar(grammar::ContextSensitiveGrammar, start::Symbol)::Vector{
     graph = build_graph(grammar)
 
     # For each rule, find the smallest sub-grammar that contains it
-    paths = []
-    for edge in graph.edges
-        edges = Set{Edge}([edge])
-        union!(edges, find_path(graph, State(Set([start]), Set([:ε, edge.symbol]), Set()), edge.symbol))
-        union!(edges, find_path(graph, State(edge.dependencies, Set([:ε]), Set([edge])), :ε))
-        push!(paths, edges)
-    end
+    paths = construct_paths(graph, start)
 
-    # Create a sub-grammar from each path
-    subgrammars = []
-    for i in 1:length(paths)
-        # Check if the path is a subset of another path
-        subset = false
-        for j in i+1:length(paths)
-            if issubset(paths[i], paths[j])
-                subset = true
-                break
-            end
-        end
-        # Create a sub-grammar if the path is not a subset
-        if !subset
-            g = deepcopy(@csgrammar begin end)
-            for edge in paths[i]
-                for rule in edge.rules
-                    add_rule!(g, rule)
-                end
-            end
-            push!(subgrammars, g)
-        end
-    end
-
-    return subgrammars
-end
-
-function find_path(graph::Graph, start::State, target::Symbol)::Set{Edge}
-    # Breadth-first search
-    queue = Queue{State}()
-    enqueue!(queue, start)
-
-    while !isempty(queue)
-        state = dequeue!(queue)
-        
-        # Check if the target is in the current state
-        if target in state.current && isempty(setdiff(state.current, state.escaped))
-            return state.used
-        end
-
-        # Enqueue all possible next states
-        for node in state.current
-            if node in state.escaped
-                continue
-            end
-            for edge in graph.nodes[node].edges
-                if !(edge in state.used)
-                    new_current = union(setdiff(state.current, Set([node])), edge.dependencies)
-                    new_used = union(state.used, Set([edge]))
-                    new_escaped = state.escaped
-                    if !(node in edge.dependencies)
-                        union!(new_escaped, Set([node]))
-                    end
-                    new_state = State(new_current, new_escaped, new_used)
-                    enqueue!(queue, new_state)
-                end
-            end
-        end
-    end
-
-    # Return an empty set if no path was found
-    return Set{Edge}()
+    # Construct a grammar for each path
+    return construct_grammars(paths)
 end
 
 function build_graph(grammar::ContextSensitiveGrammar)::Graph
     # Collect all symbols
     symbols = Set{Symbol}()
-    for type in grammar.types
+    for type ∈ grammar.types
         push!(symbols, type)
     end
 
     # Create a node for each symbol
     nodes = Dict{Symbol, Node}()
-    for symbol in symbols
+    for symbol ∈ symbols
         nodes[symbol] = Node([])
     end
 
     # Place every rule on an edge with the correct dependencies
     edges = []
-    for i in 1:length(grammar.rules)
+    for i ∈ 1:length(grammar.rules)
         rule = :($(grammar.types[i]) = $(grammar.rules[i]))
         dependencies = Set{Symbol}(grammar.childtypes[i])
         if grammar.childtypes[i] == []
@@ -121,7 +54,7 @@ function build_graph(grammar::ContextSensitiveGrammar)::Graph
 
         # Check if an edge with the same dependencies already exists
         matched = false
-        for edge in nodes[grammar.types[i]].edges
+        for edge ∈ nodes[grammar.types[i]].edges
             if edge.dependencies == dependencies
                 matched = true
                 push!(edge.rules, rule)
@@ -138,4 +71,92 @@ function build_graph(grammar::ContextSensitiveGrammar)::Graph
     end
 
     return Graph(nodes, edges)
+end
+
+function construct_paths(graph::Graph, start::Symbol)::Vector{Set{Edge}}
+    paths = Vector{Set{Edge}}()
+    covered = Set{Edge}()
+    for edge ∈ graph.edges
+        # Skip edges that have already been covered
+        if edge ∈ covered
+            continue
+        end
+        edges = Set()
+        # Find a set of rules that can reach the target rule
+        union!(edges, find_path(graph, State(Set([start]), Set([:ε, edge.symbol]), Set()), edge.symbol))
+        # Find a set of rules that can close holes in the target rule
+        union!(edges, find_path(graph, State(edge.dependencies, Set([:ε]), Set([edge])), :ε))
+        # Mark all edges as covered
+        union!(covered, edges)
+        push!(paths, edges)
+    end
+
+    return paths
+end
+
+function find_path(graph::Graph, start::State, target::Symbol)::Set{Edge}
+    # Breadth-first search
+    queue = Queue{State}()
+    enqueue!(queue, start)
+
+    while !isempty(queue)
+        state = dequeue!(queue)
+        
+        # Check if the target is in the current state
+        if target ∈ state.current && state.current ⊆ state.escaped
+            return state.used
+        end
+
+        # Enqueue all possible next states
+        for node ∈ state.current
+            if node ∈ state.escaped
+                continue
+            end
+            for edge ∈ graph.nodes[node].edges
+                if edge ∉ state.used
+                    new_current = setdiff(state.current, [node]) ∪ edge.dependencies
+                    new_used = state.used ∪ [edge]
+                    new_escaped = state.escaped
+                    if node ∉ edge.dependencies
+                        new_escaped = new_escaped ∪ [node]
+                    end
+                    new_state = State(new_current, new_escaped, new_used)
+                    enqueue!(queue, new_state)
+                end
+            end
+        end
+    end
+
+    # Return an empty set if no path was found
+    return Set()
+end
+
+function construct_grammars(paths::Vector{Set{Edge}})::Vector{ContextSensitiveGrammar}
+    # Create a sub-grammar from each path
+    subgrammars = []
+    for i ∈ 1:length(paths)
+        # Check if the path is a subset of another path
+        subset = false
+        for j ∈ 1:length(paths)
+            if i == j
+                continue
+            end
+            if paths[i] ⊊ paths[j] || (i < j && paths[i] == paths[j])
+                subset = true
+                break
+            end
+        end
+        # Create a sub-grammar if the path is not a subset
+        if !subset
+            g = deepcopy(@csgrammar begin end)
+            for edge ∈ paths[i]
+                for rule ∈ edge.rules
+                    add_rule!(g, rule)
+                end
+            end
+            push!(subgrammars, g)
+        end
+    end
+
+    return subgrammars
 end
