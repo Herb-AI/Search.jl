@@ -23,6 +23,7 @@ mutable struct PBEIteratorState
     cover::Vector{Set{Int64}}
     preds::Vector{RuleNode}
     preds_gen::Function
+    features::Vector{Vector{Float64}}
 end
 
 
@@ -52,10 +53,10 @@ function Base.iterate(
 
     programs::Vector{RuleNode} = Vector()
     for pb ∈ subproblems
-        res = synth(pb, subiterator)
+        program, synth_res = synth(pb, subiterator, allow_evaluation_errors=true)
         subiterator.solver.state = copy(init_state)
-        if res[2] == optimal_program
-            push!(programs, res[1])
+        if synth_res == optimal_program
+            push!(programs, program)
         end
     end
 
@@ -65,14 +66,20 @@ function Base.iterate(
         expr = rulenode2expr(p, grammar)
         for (i, example) ∈ enumerate(subproblems)
             sym_table = SymbolTable(grammar)
-            if evaluate(example, expr, sym_table) == 1
+            if evaluate(example, expr, sym_table, allow_evaluation_errors=true) == 1
                 push!(satisfies, i)
             end
         end
         push!(cover, satisfies)
     end
 
-    state = PBEIteratorState(programs, cover, Vector{RuleNode}(), __stateful_iterator(iter.pred_iter))
+    state = PBEIteratorState(
+        programs,
+        cover,
+        Vector{RuleNode}(),
+        __stateful_iterator(iter.pred_iter),
+        Vector{Vector{Float64}}(undef, length(iter.spec))
+    )
     return learn_tree!(iter, state)
 end
 
@@ -83,38 +90,67 @@ end
 
 
 function learn_tree!(iter::GreedyPBEIterator, state::PBEIteratorState)
+    grammar = get_grammar(iter.solver)
+
     DT = nothing
     while isnothing(DT)
-        __next_pred!(state)
-        println(rulenode2expr(state.preds[end], get_grammar(iter.solver)))
+        new_pred = __next_pred_with_filter!(state, pred -> begin
+            input_symbols = collect(keys(iter.spec[1].in))
+            pred_expr = rulenode2expr(pred, grammar)
+            if typeof(pred_expr) != Expr
+                return false
+            end
+            for sym ∈ pred_expr.args
+                if sym ∈ input_symbols
+                    return true
+                end
+            end
+
+            return false
+        end)
+
         #build decision tree
-        xx = make_features(iter, state)
-        DT = build_tree(xx, state.cover)
+        update_features!(iter, state, new_pred)
+        DT = build_tree(state.features, state.cover)
     end
 
-    return dt2expr(DT, state.terms, state.preds, get_grammar(iter.solver)), state
+    return dt2expr(DT, state.terms, state.preds, grammar), state
 end
 
-function make_features(iter::GreedyPBEIterator, state::PBEIteratorState)::Vector{Vector{Float64}}
+function update_features!(iter::GreedyPBEIterator, state::PBEIteratorState, new_pred::RuleNode)
     spec = iter.spec
     grammar = get_grammar(iter.solver)
-    preds = state.preds
+    xx = state.features
 
-    xx = Vector{Vector{Float64}}()
-    for ex ∈ spec
-        x = Float64.([execute_on_input(grammar, pred, ex.in) for pred in preds])
-        push!(xx, x)
+    for (i, ex) ∈ enumerate(spec)
+        if !isassigned(xx, i)
+            xx[i] = Vector{Float64}()
+        end
+        try
+            push!(xx[i], execute_on_input(grammar, new_pred, ex.in))
+        catch exept
+            push!(xx[i], 0)
+        end
     end
-
-    return xx
 end
 
 
 function __next_pred!(state::PBEIteratorState)::RuleNode
-    pred = freeze_state(state.preds_gen())
+    pred::RuleNode = freeze_state(state.preds_gen())
     push!(state.preds, pred)
     return pred
 end
+
+
+function __next_pred_with_filter!(state::PBEIteratorState, f)::RuleNode
+    pred::RuleNode = freeze_state(state.preds_gen())
+    while f(pred) == false
+        pred = freeze_state(state.preds_gen())
+    end
+    push!(state.preds, pred)
+    return pred
+end
+
 
 function dt2expr(tree::DecisionTreeInternal, terms::Vector{RuleNode}, preds::Vector{RuleNode}, grammar::AbstractGrammar)::Expr
     cond = rulenode2expr(preds[tree.pred_index], grammar)
@@ -126,7 +162,7 @@ function dt2expr(tree::DecisionTreeInternal, terms::Vector{RuleNode}, preds::Vec
         else
             $(f_branch)
         end"""
-    return Meta.parse(prog)
+    return Base.remove_linenums!(Meta.parse(prog))
 end
 
 function dt2expr(tree::DecisionTreeLeaf, terms::Vector{RuleNode}, preds::Vector{RuleNode}, grammar::AbstractGrammar)
