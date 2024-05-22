@@ -1,6 +1,21 @@
 using HerbBenchmarks.PBE_SLIA_Track_2019
 using Base.Threads
 
+macro timeout(seconds, expr, fail)
+    quote
+        tsk = @task $expr
+        schedule(tsk)
+        Timer($seconds) do timer
+            istaskdone(tsk) || Base.throwto(tsk, InterruptException())
+        end
+        try
+            fetch(tsk)
+        catch _
+            $fail
+        end
+    end
+end
+
 @testset "Testing the greedy PBE iterator" verbose = true begin
     g = @cfgrammar begin
         Number = |(0:1)
@@ -56,6 +71,7 @@ using Base.Threads
 end
 
 @testset "SyGuS benchmarks" begin
+    
     function get_problems_and_grammars(mod::Module)
         all_symbols = names(mod)
         # Filter symbols starting with "problem"
@@ -72,54 +88,22 @@ end
         return problems
     end
 
+    @testset "View SyGuS problems" begin
+        problemsets = get_problems_and_grammars(PBE_SLIA_Track_2019)[1:10]
 
-    function solve(iterator, timeout_seconds=10)
-        # Create a task to execute the iteration
-        task = @task begin
-            Base.iterate(iterator)
-        end
-        Threads.@spawn task
+        for (prob, g) ∈ problemsets
+            term_iter = BFSIterator(g, :Start)
+            pred_iter = BFSIterator(g, :ntBool)
+            pbe_iterator = GreedyPBEIterator(g, :Start, prob.spec, term_iter, pred_iter, max_time=25.0)
 
-        println("sleeping")
-        sleep(10)
-        println("woke up")
-        if istaskdone(task)
-            println("isdone")
-            return 1
-        else
-            Base.throwto(task, InterruptException())
-            return nothing
+            sol = Base.iterate(pbe_iterator)
+            println("----------------")
+            if isnothing(sol)
+                println("timeout")
+            else
+                println(sol[1])
+            end
+            println("----------------")
         end
     end
-    # @testset "String examples" begin
-    #     # The id has to be matching
-    #     grammar = PBE_SLIA_Track_2019.grammar_12948338
-    #     problem = PBE_SLIA_Track_2019.problem_12948338
-
-    #     term_iter = BFSIterator(grammar, :Start)
-    #     pred_iter = BFSIterator(grammar, :ntBool)
-    #     pbe_iterator = GreedyPBEIterator(grammar, :Start, problem.spec, term_iter, pred_iter)
-
-    #     for (i, prog) ∈ enumerate(pbe_iterator)
-    #         println(prog)
-    #         break
-    #     end
-    #     println("---------------------")
-    # end
-
-    # @testset "View SyGuS problems" begin
-    #     problemsets = get_problems_and_grammars(PBE_SLIA_Track_2019)[2]
-
-    #     for (prob, g) ∈ problemsets
-    #         term_iter = BFSIterator(g, :Start)
-    #         pred_iter = BFSIterator(g, :ntBool)
-    #         pbe_iterator = GreedyPBEIterator(g, :Start, prob.spec, term_iter, pred_iter)
-
-
-    #         solution, state = Base.iterate(pbe_iterator)
-    #         println("----------------")
-    #         println(solution)
-    #         println("----------------")
-    #     end
-    # end
 end

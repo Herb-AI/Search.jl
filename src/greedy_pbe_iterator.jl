@@ -11,7 +11,8 @@ end
 @programiterator GreedyPBEIterator(
     spec::Vector{<:IOExample},
     term_iter::ProgramIterator,
-    pred_iter::ProgramIterator
+    pred_iter::ProgramIterator,
+    max_time::Float64 = 60.0
 )
 
 
@@ -24,6 +25,7 @@ mutable struct PBEIteratorState
     preds::Vector{RuleNode}
     preds_gen::Function
     features::Vector{Vector{Float64}}
+    start_time::Float64
 end
 
 
@@ -51,10 +53,15 @@ function Base.iterate(
     init_state = copy(subiterator.solver.state)
     subproblems = map(ex -> Problem([ex]), iter.spec)
 
+    start_time = time()
     programs::Vector{RuleNode} = Vector()
     for pb ∈ subproblems
-        program, synth_res = synth(pb, subiterator, allow_evaluation_errors=true)
+        program, synth_res = synth(pb, subiterator, allow_evaluation_errors=true, max_time=iter.max_time)
         subiterator.solver.state = copy(init_state)
+
+        if (time() - start_time > iter.max_time || synth_res == suboptimal_program)
+            return nothing
+        end
         if synth_res == optimal_program
             push!(programs, program)
         end
@@ -78,14 +85,18 @@ function Base.iterate(
         cover,
         Vector{RuleNode}(),
         __stateful_iterator(iter.pred_iter),
-        Vector{Vector{Float64}}(undef, length(iter.spec))
+        Vector{Vector{Float64}}(undef, length(iter.spec)),
+        start_time
     )
-    return learn_tree!(iter, state)
+
+    dt = learn_tree!(iter, state)
+    return (time() - start_time > iter.max_time) ? nothing : dt
 end
 
 
 function Base.iterate(iter::GreedyPBEIterator, state::PBEIteratorState)
-    return learn_tree!(iter, state)
+    dt = learn_tree!(iter, state)
+    return (time() - state.start_time > iter.max_time) ? nothing : dt
 end
 
 
