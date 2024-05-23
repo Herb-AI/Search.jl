@@ -5,6 +5,7 @@ using HerbInterpret
 using HerbConstraints
 using HerbSpecification
 using Test
+using HerbBenchmarks
 
 include("test_helpers.jl")
 using Random
@@ -23,6 +24,7 @@ Random.seed!(1234)
     # include("test_ordered.jl")
     # include("test_contains.jl")
     include("test_smallest_subset.jl")
+    # include("test_benchmarks.jl")
     # Excluded because it contains long tests
     # include("test_realistic_searches.jl")
 end
