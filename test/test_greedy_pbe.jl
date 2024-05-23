@@ -77,12 +77,12 @@ end
         # Filter symbols starting with "problem"
         problem_symbols = filter(s -> occursin(r"^problem_\d+$", string(s)), all_symbols)
         # Get the corresponding values (functions) for the problem symbols
-        problems = Vector{Tuple{Any,Any}}()
+        problems = Vector{Tuple{Any,Any,Any}}()
         for problem_sym ∈ problem_symbols
             prob = getfield(mod, problem_sym)
             grammar_sym = Symbol(replace(string(problem_sym), "problem" => "grammar"))
             grammar = getfield(mod, grammar_sym)
-            push!(problems, (prob, grammar))
+            push!(problems, (string(problem_sym), prob, grammar))
         end
 
         return problems
@@ -91,13 +91,14 @@ end
     @testset "View SyGuS problems" begin
         problemsets = get_problems_and_grammars(PBE_SLIA_Track_2019)[1:10]
 
-        for (prob, g) ∈ problemsets
+        for (id, prob, g) ∈ problemsets
             term_iter = BFSIterator(g, :Start)
             pred_iter = BFSIterator(g, :ntBool)
             pbe_iterator = GreedyPBEIterator(g, :Start, prob.spec, term_iter, pred_iter, max_time=25.0)
 
             sol = Base.iterate(pbe_iterator)
             println("----------------")
+            println(id)
             if isnothing(sol)
                 println("timeout")
             else

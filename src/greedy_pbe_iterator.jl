@@ -29,15 +29,6 @@ mutable struct PBEIteratorState
 end
 
 
-function __stateful_iterator(iter::ProgramIterator)
-    state = nothing
-    return function ()
-        p, state = isnothing(state) ? iterate(iter) : iterate(iter, state)
-        return p
-    end
-end
-
-
 """
     Base.iterate(
     iterator::GreedyPBEIterator;
@@ -67,18 +58,7 @@ function Base.iterate(
         end
     end
 
-    cover = Vector{Set{Int64}}()
-    for p ∈ programs
-        satisfies = Set{Int64}()
-        expr = rulenode2expr(p, grammar)
-        for (i, example) ∈ enumerate(subproblems)
-            sym_table = SymbolTable(grammar)
-            if evaluate(example, expr, sym_table, allow_evaluation_errors=true) == 1
-                push!(satisfies, i)
-            end
-        end
-        push!(cover, satisfies)
-    end
+    cover = __make_cover(programs, subproblems, grammar)
 
     state = PBEIteratorState(
         programs,
@@ -121,14 +101,31 @@ function learn_tree!(iter::GreedyPBEIterator, state::PBEIteratorState)
         end)
 
         #build decision tree
-        update_features!(iter, state, new_pred)
-        DT = build_tree(state.features, state.cover)
+        __update_features!(iter, state, new_pred)
+        DT = build_tree(state.terms, state.preds, state.features, state.cover)
     end
 
-    return dt2expr(DT, state.terms, state.preds, grammar), state
+    return dt2expr(DT, grammar), state
 end
 
-function update_features!(iter::GreedyPBEIterator, state::PBEIteratorState, new_pred::RuleNode)
+function __make_cover(terms::Vector{RuleNode}, subproblems::Vector{Problem{Vector{IOExample}}}, grammar::AbstractGrammar)::Vector{Set{Int64}}
+    cover = Vector{Set{Int64}}()
+    for term ∈ terms
+        satisfies = Set{Int64}()
+        expr = rulenode2expr(term, grammar)
+        for (i, example) ∈ enumerate(subproblems)
+            sym_table = SymbolTable(grammar)
+            if evaluate(example, expr, sym_table, allow_evaluation_errors=true) == 1
+                push!(satisfies, i)
+            end
+        end
+        push!(cover, satisfies)
+    end
+    return cover
+end
+
+
+function __update_features!(iter::GreedyPBEIterator, state::PBEIteratorState, new_pred::RuleNode)
     spec = iter.spec
     grammar = get_grammar(iter.solver)
     xx = state.features
@@ -163,20 +160,10 @@ function __next_pred_with_filter!(state::PBEIteratorState, f)::RuleNode
 end
 
 
-function dt2expr(tree::DecisionTreeInternal, terms::Vector{RuleNode}, preds::Vector{RuleNode}, grammar::AbstractGrammar)::Expr
-    cond = rulenode2expr(preds[tree.pred_index], grammar)
-    t_branch = dt2expr(tree.true_branch, terms, preds, grammar)
-    f_branch = dt2expr(tree.false_branch, terms, preds, grammar)
-
-    prog = """if $(cond)
-            $(t_branch)
-        else
-            $(f_branch)
-        end"""
-    return Base.remove_linenums!(Meta.parse(prog))
-end
-
-function dt2expr(tree::DecisionTreeLeaf, terms::Vector{RuleNode}, preds::Vector{RuleNode}, grammar::AbstractGrammar)
-    term = rulenode2expr(terms[tree.term_index], grammar)
-    return term
+function __stateful_iterator(iter::ProgramIterator)
+    state = nothing
+    return function ()
+        p, state = isnothing(state) ? iterate(iter) : iterate(iter, state)
+        return p
+    end
 end

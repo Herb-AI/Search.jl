@@ -6,22 +6,56 @@ end
 Base.showerror(io::IO, e::DecisionTreeError) = print(io, e.message)
 
 struct DecisionTreeInternal <: AbstractDecisionTreeNode
-    pred_index::Int64
+    pred_index::UInt32
     true_branch::AbstractDecisionTreeNode
     false_branch::AbstractDecisionTreeNode
 end
 
 struct DecisionTreeLeaf <: AbstractDecisionTreeNode
-    term_index::Int64
+    term_index::UInt32
+end
+
+struct DecisionTreeAST
+    tree::AbstractDecisionTreeNode
+    terms::Vector{RuleNode}
+    preds::Vector{RuleNode}
 end
 
 
-function build_tree(X::Vector{Vector{Float64}}, covers::Vector{Set{Int64}})::Union{AbstractDecisionTreeNode,Nothing}
-    return build_tree(Set(1:length(X)), X, covers, Set(1:length(X[1])))
+function dt2expr(AST::DecisionTreeAST, grammar::AbstractGrammar)::Expr
+    return __dt2expr(AST.tree, AST.terms, AST.preds, grammar)
 end
 
 
-function build_tree(pts::Set{Int64}, X::Vector{Vector{Float64}}, covers::Vector{Set{Int64}}, preds::Set{Int64})::Union{AbstractDecisionTreeNode,Nothing}
+function build_tree(terms::Vector{RuleNode}, preds::Vector{RuleNode}, X::Vector{Vector{Float64}}, covers::Vector{Set{Int64}})::Union{DecisionTreeAST,Nothing}
+    dt = __build_tree(Set(1:length(X)), X, covers, Set(1:length(X[1])))
+    if isnothing(dt)
+        return nothing
+    end
+    return DecisionTreeAST(dt, terms, preds)
+end
+
+
+function __dt2expr(tree::DecisionTreeInternal, terms::Vector{RuleNode}, preds::Vector{RuleNode}, grammar::AbstractGrammar)::Expr
+    cond = rulenode2expr(preds[tree.pred_index], grammar)
+    t_branch = __dt2expr(tree.true_branch, terms, preds, grammar)
+    f_branch = __dt2expr(tree.false_branch, terms, preds, grammar)
+
+    prog = """if $(cond)
+            $(t_branch)
+        else
+            $(f_branch)
+        end"""
+    return Base.remove_linenums!(Meta.parse(prog))
+end
+
+function __dt2expr(tree::DecisionTreeLeaf, terms::Vector{RuleNode}, preds::Vector{RuleNode}, grammar::AbstractGrammar)
+    term = rulenode2expr(terms[tree.term_index], grammar)
+    return term
+end
+
+
+function __build_tree(pts::Set{Int64}, X::Vector{Vector{Float64}}, covers::Vector{Set{Int64}}, preds::Set{Int64})::Union{AbstractDecisionTreeNode,Nothing}
     #check if a term covers all the indices
     for (i, cover) ∈ enumerate(covers)
         if issubset(pts, cover) # term t is a leaf
@@ -50,8 +84,8 @@ function build_tree(pts::Set{Int64}, X::Vector{Vector{Float64}}, covers::Vector{
     #split the remaining pts after best_pred
     ptsy, ptsn = split_by_predicate(pts, best_pred, X)
     delete!(preds, best_pred)
-    yes_branch = build_tree(ptsy, X, covers, preds)
-    no_branch = build_tree(ptsn, X, covers, preds)
+    yes_branch = __build_tree(ptsy, X, covers, preds)
+    no_branch = __build_tree(ptsn, X, covers, preds)
     push!(preds, best_pred)
 
     if isnothing(yes_branch) || isnothing(no_branch)
