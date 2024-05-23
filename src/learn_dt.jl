@@ -1,14 +1,23 @@
-function get_labels(
+function get_labels_examples(
     solutions::Vector{Tuple{RuleNode, Set{Number}}},
-    n_labels::Int64
-)::Vector{String}
-    examples = fill("", n_labels)
+    IO_examples::Vector{IOExample}
+)::Tuple{Vector{String}, Vector{IOExample}}
+    labels = fill("", length(IO_examples))
     for (program_idx, s) in enumerate(solutions)
         for i in s[2]
-            examples[i] *= string(program_idx)
+            labels[i] *= string(program_idx)
         end
     end
-    return examples
+
+    examples = Vector{IOExample}()
+    for (i, l) in enumerate(labels)
+        if !isempty(l)
+            push!(examples, IO_examples[i])
+        end
+    end
+    filter!(l->!isempty(l), labels)
+
+    return (labels, examples)
 end
 
 using DecisionTree
@@ -18,45 +27,53 @@ function learn_DT(
     sym_start::Symbol,
     sym_bool::Symbol,
     solutions::Vector{Tuple{RuleNode, Set{Number}}},
-    num_predicates::Int64=100
+    max_predicates::Int64=1024
 )::Union{Tuple{RuleNode, AbstractGrammar}, Nothing}
     
+    # no solutions to combine with the decision tree -> return nothing
     if isempty(solutions)
         return nothing
     end
-
-    labels = get_labels(solutions, length(problem.spec))
-    examples =Vector{IOExample}()
-    for (i, l) in enumerate(labels)
-        if !isempty(l)
-            push!(examples, problem.spec[i])
-        end
-    end
-    (features, predicates) = get_features_predicates(grammar, sym_bool, examples, num_predicates)
-    features = float.(features)
     
-    filter!(l->!isempty(l), labels)
-
-    # init and fit model with features and labels
-    model = DecisionTree.DecisionTreeClassifier()
-    DecisionTree.fit!(model, features, labels)
-
-    # add condition rule for easy access when outputing
-    return_type = grammar.rules[grammar.bytype[sym_start][1]]
-    
-    # check if condition rule is contained in the grammar
+    # check if the condition rule is contained in the grammar
+    return_type = grammar.rules[grammar.bytype[sym_start][1]]    
     idx = findfirst(r -> r == :($sym_bool ? $return_type : $return_type), grammar.rules)
-    
-    println("idx: ", idx)
+    # add condition rule for easy access when outputing
     if isnothing(idx)
-        println("before adding rule", length(grammar.rules))
         add_rule!(grammar, :($return_type = $sym_bool ? $return_type : $return_type))
-        println("adding rule", length(grammar.rules))
         idx = length(grammar.rules)
     end
 
-    final_program = construct_final(model.root.node, idx, solutions, predicates, false)
-    return (final_program, grammar)
+    symboltable :: SymbolTable = SymbolTable(grammar, Main)
+
+    labels, examples = get_labels_examples(solutions, problem.spec)
+    
+    n_predicates = 16
+    candidate_program = nothing
+    while n_predicates <= max_predicates
+        println("pred: ", n_predicates)
+        (features, predicates) = get_features_predicates(grammar, sym_bool, examples, n_predicates)
+        features = float.(features)
+
+        # init and fit model with features and labels
+        model = DecisionTree.DecisionTreeClassifier()
+        DecisionTree.fit!(model, features, labels)
+
+        candidate_program = construct_final(model.root.node, idx, solutions, predicates, false)
+        expr = rulenode2expr(candidate_program, grammar)
+        println("final_program expr: ", expr)
+
+        score = evaluate(Problem(examples), expr, symboltable, allow_evaluation_errors=true)
+        if score == 1
+            candidate_program = freeze_state(candidate_program)
+            return (candidate_program, grammar)
+        else 
+            n_predicates *= 4
+        end
+    end
+
+    candidate_program = freeze_state(candidate_program)
+    return (candidate_program, grammar)
 end
 
 function construct_final(
