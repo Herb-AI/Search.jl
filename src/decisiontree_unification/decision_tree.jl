@@ -1,3 +1,5 @@
+abstract type DivideConquerIterator <: ProgramIterator end
+
 abstract type AbstractDecisionTreeNode end
 
 struct DecisionTreeError <: Exception
@@ -15,24 +17,160 @@ struct DecisionTreeLeaf <: AbstractDecisionTreeNode
     term_index::UInt32
 end
 
-struct DecisionTreeAST
-    tree::AbstractDecisionTreeNode
+mutable struct DecisionTreeAST
+    tree::Union{Nothing,AbstractDecisionTreeNode}
+    iter::DivideConquerIterator
     terms::Vector{RuleNode}
     preds::Vector{RuleNode}
+    pred_gen::Function
+    cover::Vector{Set{Int64}}
+    features::Vector{Vector{Float64}}
+
+    DecisionTreeAST(iter::DivideConquerIterator) = begin
+        grammar = get_grammar(iter.solver)
+        examples = get_spec(iter)
+        terms = initial_programs(iter, examples)
+        if isnothing(terms)
+            throw(DecisionTreeError("terms couldn't be generated or timedout"))
+        end
+        cover = __make_cover(terms, examples, grammar)
+        gen = __stateful_iterator(get_pred_iter(iter))
+
+        pred_gen = __next_pred_with_filter!(gen, pred -> begin
+            input_symbols = collect(keys(examples[1].in))
+            pred_expr = rulenode2expr(pred, grammar)
+            if typeof(pred_expr) != Expr
+                return false
+            end
+            for sym ∈ pred_expr.args
+                if sym ∈ input_symbols
+                    return true
+                end
+            end
+
+            return false
+        end)
+
+        this = new(
+            nothing,
+            iter,
+            terms,
+            Vector{RuleNode}(),
+            pred_gen,
+            cover,
+            Vector{Vector{Float64}}(undef, length(iter.spec))
+        )
+        __learn_tree!(this)
+    end
 end
 
 
-function dt2expr(AST::DecisionTreeAST, grammar::AbstractGrammar)::Expr
-    return __dt2expr(AST.tree, AST.terms, AST.preds, grammar)
+function Base.iterate(iter::DivideConquerIterator)
+    try
+        AST = DecisionTreeAST(iter)
+        return dt2expr(AST), AST
+    catch ex
+        println(ex.message)
+        return nothing
+    end
+end
+
+function Base.iterate(iter::DivideConquerIterator, AST::DecisionTreeAST)
+    return dt2expr(AST), AST
+end
+
+function initial_programs(iter::DivideConquerIterator, spec::Vector{IOExample})::Union{Nothing,Vector{RuleNode}}
+    throw(DecisionTreeError("You must implement the initial_programs method for your iterator type"))
+end
+
+function get_pred_iter(iter::DivideConquerIterator)::ProgramIterator
+    throw(DecisionTreeError("You must implement the get_pred_iter method for your iterator type"))
+end
+
+function get_spec(iter::DivideConquerIterator)::Vector{IOExample}
+    throw(DecisionTreeError("You must implement the get_spec method for your iterator type"))
 end
 
 
-function build_tree(terms::Vector{RuleNode}, preds::Vector{RuleNode}, X::Vector{Vector{Float64}}, covers::Vector{Set{Int64}})::Union{DecisionTreeAST,Nothing}
+function dt2expr(AST::DecisionTreeAST)::Expr
+    return __dt2expr(AST.tree, AST.terms, AST.preds, get_grammar(AST.iter.solver))
+end
+
+
+function __learn_tree!(state::DecisionTreeAST)::DecisionTreeAST
+    while isnothing(state.tree)
+        new_pred = state.pred_gen()
+        push!(state.preds, new_pred)
+        #build decision tree
+        __update_features!(state, new_pred)
+        state.tree = build_tree(state.features, state.cover)
+    end
+
+    return state
+end
+
+
+function __update_features!(state::DecisionTreeAST, new_pred::RuleNode)
+    spec = get_spec(state.iter)
+    grammar = get_grammar(state.iter.solver)
+    xx = state.features
+
+    for (i, ex) ∈ enumerate(spec)
+        if !isassigned(xx, i)
+            xx[i] = Vector{Float64}()
+        end
+        try
+            push!(xx[i], execute_on_input(grammar, new_pred, ex.in))
+        catch exept
+            push!(xx[i], 0)
+        end
+    end
+end
+
+function __next_pred_with_filter!(preds_gen::Function, f::Function)::Function
+    return function ()
+        pred::RuleNode = freeze_state(preds_gen())
+        while f(pred) == false
+            pred = freeze_state(preds_gen())
+        end
+        return pred
+    end
+end
+
+
+function build_tree(X::Vector{Vector{Float64}}, covers::Vector{Set{Int64}})::Union{AbstractDecisionTreeNode,Nothing}
     dt = __build_tree(Set(1:length(X)), X, covers, Set(1:length(X[1])))
     if isnothing(dt)
         return nothing
     end
-    return DecisionTreeAST(dt, terms, preds)
+    return dt
+end
+
+
+function __make_cover(terms::Vector{RuleNode}, examples::Vector{IOExample}, grammar::AbstractGrammar)::Vector{Set{Int64}}
+    cover = Vector{Set{Int64}}()
+    subproblems = map(ex -> Problem([ex]), examples)
+    for term ∈ terms
+        satisfies = Set{Int64}()
+        expr = rulenode2expr(term, grammar)
+        for (i, example) ∈ enumerate(subproblems)
+            sym_table = SymbolTable(grammar)
+            if evaluate(example, expr, sym_table, allow_evaluation_errors=true) == 1
+                push!(satisfies, i)
+            end
+        end
+        push!(cover, satisfies)
+    end
+    return cover
+end
+
+
+function __stateful_iterator(iter::ProgramIterator)
+    state = nothing
+    return function ()
+        p, state = isnothing(state) ? iterate(iter) : iterate(iter, state)
+        return p
+    end
 end
 
 
