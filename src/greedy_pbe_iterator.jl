@@ -15,57 +15,33 @@ end
     max_time::Float64 = 60.0
 ) <: DivideConquerIterator
 
+function Base.iterate(iter::GreedyPBEIterator)
+    try
+        start_time = time()
+        AST = DecisionTreeAST(iter)
+        learn_tree!(AST)
+        if time() - start_time > iter.max_time
+            return nothing
+        end
+        return dt2expr(AST), AST
+    catch
+        return nothing
+    end
+end
 
-# """
-# The state of the iterator is made up of the terms and preds that have been generated
-# """
-# mutable struct PBEIteratorState
-#     terms::Vector{RuleNode}
-#     cover::Vector{Set{Int64}}
-#     preds::Vector{RuleNode}
-#     preds_gen::Function
-#     features::Vector{Vector{Float64}}
-#     start_time::Float64
-# end
+function Base.iterate(::GreedyPBEIterator, state::DecisionTreeAST)
+    try
+        start_time = time()
+        learn_tree!(AST)
+        if time() - start_time > iter.max_time
+            return nothing
+        end
+        return dt2expr(AST), AST
+    catch
+        return nothing
+    end
+end
 
-
-# """
-#     Base.iterate(
-#     iterator::GreedyPBEIterator;
-# )
-# Starts the iteration for the GreedyPBEIterator. This method will use the subiterator to produce and store n programs that satisfy at least 1 example from the specification.
-# """
-# function Base.iterate(
-#     iter::GreedyPBEIterator;
-# )
-
-#     subiterator = iter.term_iter
-#     grammar = get_grammar(iter.solver)
-#     init_state = copy(subiterator.solver.state)
-#     subproblems = map(ex -> Problem([ex]), iter.spec)
-
-#     start_time = time()
-#     programs::Vector{RuleNode} = Vector()
-#     for pb ∈ subproblems
-#         program, synth_res = synth(pb, subiterator, allow_evaluation_errors=true, max_time=iter.max_time)
-#         subiterator.solver.state = copy(init_state)
-
-#         if (time() - start_time > iter.max_time || synth_res == suboptimal_program)
-#             return nothing
-#         end
-#         if synth_res == optimal_program
-#             push!(programs, program)
-#         end
-#     end
-
-#     return (time() - start_time > iter.max_time) ? nothing : dt
-# end
-
-
-# function Base.iterate(iter::GreedyPBEIterator, state::PBEIteratorState)
-#     dt = learn_tree!(iter, state)
-#     return (time() - state.start_time > iter.max_time) ? nothing : dt
-# end
 
 function get_spec(iter::GreedyPBEIterator)::Vector{IOExample}
     return iter.spec

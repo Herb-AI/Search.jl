@@ -51,7 +51,7 @@ mutable struct DecisionTreeAST
             return false
         end)
 
-        this = new(
+        new(
             nothing,
             iter,
             terms,
@@ -60,7 +60,6 @@ mutable struct DecisionTreeAST
             cover,
             Vector{Vector{Float64}}(undef, length(iter.spec))
         )
-        __learn_tree!(this)
     end
 end
 
@@ -68,6 +67,7 @@ end
 function Base.iterate(iter::DivideConquerIterator)
     try
         AST = DecisionTreeAST(iter)
+        learn_tree!(AST)
         return dt2expr(AST), AST
     catch ex
         println(ex.message)
@@ -97,7 +97,7 @@ function dt2expr(AST::DecisionTreeAST)::Expr
 end
 
 
-function __learn_tree!(state::DecisionTreeAST)::DecisionTreeAST
+function learn_tree!(state::DecisionTreeAST)::DecisionTreeAST
     while isnothing(state.tree)
         new_pred = state.pred_gen()
         push!(state.preds, new_pred)
