@@ -30,7 +30,7 @@ mutable struct DecisionTreeAST
     DecisionTreeAST(iter::DivideConquerIterator; pred_batch_size::Int64=64) = begin
         grammar = get_grammar(iter.solver)
         examples = get_spec(iter)
-        terms = initial_programs(iter, examples)
+        terms = initial_programs!(iter, examples)
         if isnothing(terms)
             if iter.max_enumerations == 0
                 throw(DecisionTreeError("Ran out of enumerations for terms"))
@@ -78,7 +78,7 @@ function Base.iterate(iter::DivideConquerIterator, AST::DecisionTreeAST)
     return dt2expr(AST), AST
 end
 
-function initial_programs(iter::DivideConquerIterator, spec::Vector{IOExample})::Union{Nothing,Vector{RuleNode}}
+function initial_programs!(iter::DivideConquerIterator, spec::Vector{IOExample})::Union{Nothing,Vector{RuleNode}}
     throw(DecisionTreeError("You must implement the initial_programs method for your iterator type"))
 end
 
@@ -178,7 +178,10 @@ end
 
 function __dt2expr(tree::DecisionTreeLeaf, terms::Vector{RuleNode}, preds::Vector{RuleNode}, grammar::AbstractGrammar)
     term = rulenode2expr(terms[tree.term_index], grammar)
-    return term
+    expr = quote
+        $term
+    end
+    return Base.remove_linenums!(expr)
 end
 
 

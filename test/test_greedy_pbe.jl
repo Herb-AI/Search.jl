@@ -89,6 +89,9 @@ end
             :iters => Vector{Int64}()
         )
         for (i, (id, (prob, g))) ∈ enumerate(problemset)
+            if length(prob.spec) > 100
+                continue
+            end
             if i > 100
                 break
             end

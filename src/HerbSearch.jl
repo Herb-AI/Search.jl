@@ -76,6 +76,7 @@ export
   mean_squared_error,
   misclassification,
 
+  LimitedIterator,
   GreedyPBEIterator,
   GeneticSearchIterator,
   misclassification,

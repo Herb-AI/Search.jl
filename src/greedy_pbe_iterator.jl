@@ -19,11 +19,8 @@ end
 
 function Base.iterate(iter::GreedyPBEIterator)
     try
-        start_time = time()
         AST = DecisionTreeAST(iter, pred_batch_size=2000)
-        #println("Generated initial programs")
         learn_tree!(AST)
-        #println("Learned tree")
         return dt2expr(AST), AST
     catch ex
         if ex isa DecisionTreeError
@@ -37,11 +34,7 @@ end
 
 function Base.iterate(::GreedyPBEIterator, state::DecisionTreeAST)
     try
-        start_time = time()
         learn_tree!(AST)
-        if time() - start_time > iter.max_time
-            return nothing
-        end
         return dt2expr(AST), AST
     catch ex
         if ex isa DecisionTreeError
@@ -62,7 +55,7 @@ function get_pred_iter(iter::GreedyPBEIterator)::ProgramIterator
     return iter.pred_iter
 end
 
-function initial_programs(iter::GreedyPBEIterator, examples::Vector{IOExample})::Union{Nothing,Vector{RuleNode}}
+function initial_programs!(iter::GreedyPBEIterator, examples::Vector{IOExample})::Union{Nothing,Vector{RuleNode}}
     g = get_grammar(iter.solver)
     sym_table = SymbolTable(g, iter.mod)
     subiterator = iter.term_iter
@@ -125,4 +118,4 @@ function Base.iterate(iterator::LimitedIterator, state::Tuple{Int64, Any})
     end
     next, new_state = Base.iterate(iterator.iter, state[2])
     return next, (1 + state[1], new_state)
-end)
+end
