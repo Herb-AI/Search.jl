@@ -5,7 +5,7 @@ abstract type AbstractDecisionTreeNode end
 struct DecisionTreeError <: Exception
     message::String
 end
-Base.showerror(io::IO, e::DecisionTreeError) = print(io, e.message)
+Base.showerror(io::IO, e::DecisionTreeError) = println(io, e.message)
 
 struct DecisionTreeInternal <: AbstractDecisionTreeNode
     pred_index::UInt32
@@ -22,34 +22,32 @@ mutable struct DecisionTreeAST
     iter::DivideConquerIterator
     terms::Vector{RuleNode}
     preds::Vector{RuleNode}
-    pred_gen::Function
+    pred_gen::Iterators.Stateful
     cover::Vector{Set{Int64}}
     features::Vector{Vector{Float64}}
+    pred_batch_size::Int64
 
-    DecisionTreeAST(iter::DivideConquerIterator) = begin
+    DecisionTreeAST(iter::DivideConquerIterator; pred_batch_size::Int64=64) = begin
         grammar = get_grammar(iter.solver)
         examples = get_spec(iter)
         terms = initial_programs(iter, examples)
         if isnothing(terms)
+            if iter.max_enumerations == 0
+                throw(DecisionTreeError("Ran out of enumerations for terms"))
+            end
             throw(DecisionTreeError("terms couldn't be generated or timedout"))
         end
         cover = __make_cover(terms, examples, grammar)
-        gen = __stateful_iterator(get_pred_iter(iter))
 
-        pred_gen = __next_pred_with_filter!(gen, pred -> begin
+        pred_gen = Iterators.take(get_pred_iter(iter), iter.max_enumerations)
+        pred_gen = Iterators.filter(pred_gen) do pred
             input_symbols = collect(keys(examples[1].in))
             pred_expr = rulenode2expr(pred, grammar)
-            if typeof(pred_expr) != Expr
-                return false
-            end
-            for sym ∈ pred_expr.args
-                if sym ∈ input_symbols
-                    return true
-                end
-            end
-
-            return false
-        end)
+            typeof(pred_expr) == Expr || return false
+            any(sym -> sym ∈ input_symbols, __flatten_symbols(pred_expr))
+        end
+        pred_gen = Iterators.map(pred -> freeze_state(pred), pred_gen) # to iterate over RuleNodes and not StateHoles
+        pred_gen = Iterators.Stateful(pred_gen)
 
         new(
             nothing,
@@ -58,7 +56,8 @@ mutable struct DecisionTreeAST
             Vector{RuleNode}(),
             pred_gen,
             cover,
-            Vector{Vector{Float64}}(undef, length(iter.spec))
+            Vector{Vector{Float64}}(undef, length(iter.spec)),
+            pred_batch_size
         )
     end
 end
@@ -93,16 +92,25 @@ end
 
 
 function dt2expr(AST::DecisionTreeAST)::Expr
+    if isnothing(AST.tree)
+        throw(DecisionTreeError("There is no tree to convert"))
+    end
     return __dt2expr(AST.tree, AST.terms, AST.preds, get_grammar(AST.iter.solver))
 end
 
 
 function learn_tree!(state::DecisionTreeAST)::DecisionTreeAST
     while isnothing(state.tree)
-        new_pred = state.pred_gen()
-        push!(state.preds, new_pred)
-        #build decision tree
-        __update_features!(state, new_pred)
+        for i in 1:state.pred_batch_size
+            new_pred = iterate(state.pred_gen)
+            if isnothing(new_pred)
+                println("exhausted the predicate enumeration")
+                state.tree = build_tree(state.features, state.cover)
+                return state
+            end
+            push!(state.preds, new_pred[1])
+            __update_features!(state, new_pred[1])
+        end
         state.tree = build_tree(state.features, state.cover)
     end
 
@@ -124,16 +132,6 @@ function __update_features!(state::DecisionTreeAST, new_pred::RuleNode)
         catch exept
             push!(xx[i], 0)
         end
-    end
-end
-
-function __next_pred_with_filter!(preds_gen::Function, f::Function)::Function
-    return function ()
-        pred::RuleNode = freeze_state(preds_gen())
-        while f(pred) == false
-            pred = freeze_state(preds_gen())
-        end
-        return pred
     end
 end
 
@@ -162,15 +160,6 @@ function __make_cover(terms::Vector{RuleNode}, examples::Vector{IOExample}, gram
         push!(cover, satisfies)
     end
     return cover
-end
-
-
-function __stateful_iterator(iter::ProgramIterator)
-    state = nothing
-    return function ()
-        p, state = isnothing(state) ? iterate(iter) : iterate(iter, state)
-        return p
-    end
 end
 
 
@@ -293,3 +282,11 @@ function conditional_prob(pt::Int64, pts::Set{Int64}, t::Int64, covers::Vector{S
 
     return num / den
 end
+
+__flatten_symbols!(list) = ex -> begin
+    ex isa Symbol && push!(list, ex)
+    ex isa Expr && ex.head == :call && map(__flatten_symbols!(list), ex.args[2:end])
+    list
+end
+
+__flatten_symbols(ex) = ex |> __flatten_symbols!([])
