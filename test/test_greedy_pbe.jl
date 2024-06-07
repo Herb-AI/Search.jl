@@ -10,19 +10,24 @@ using HerbBenchmarks, HerbBenchmarks.PBE_SLIA_Track_2019, HerbBenchmarks.PBE_BV_
 #         nBool = (nBool || nBool) | (nBool && nBool) | (!nBool) | (Number < Number) | (Number > Number) | (Number == Number)
 #     end
 
-#     @testset "Producing initial programs" begin
-#         examples = [IOExample(Dict(:x => x), x * x + 1) for x ∈ 1:5]
-
-#         term_iter = BFSIterator(g, :Number)
-#         pred_iter = BFSIterator(g, :nBool)
-#         pbe_iterator = GreedyPBEIterator(g, :Number, examples, term_iter, pred_iter)
-
-#         for (i, prog) ∈ enumerate(pbe_iterator)
-#             println(prog)
-#             break
-#         end
-#         println("---------------------")
-#     end
+@testset "Producing initial programs with limited iterations" begin
+    g = @cfgrammar begin
+        Number = |(0:1)
+        Number = x
+        Number = Number + Number
+        Number = Number * Number
+        nBool = (nBool || nBool) | (nBool && nBool) | (!nBool) | (Number < Number) | (Number > Number) | (Number == Number)
+    end
+    examples = [IOExample(Dict(:x => x), x * x + 1) for x ∈ 1:5]
+    max_iters = 500
+    bfs = LimitedIterator(g, :Number, BFSIterator(g, :Number), max_iters)
+    prob = Problem(examples)
+    prog, synth_res = synth(prob, bfs, allow_evaluation_errors=true)
+    println(synth_res)
+    println("length of the program $(length(prog))")
+    println("made iterations: $(max_iters - bfs.max_enumerations)")
+    println("----------")
+end
 
 @testset "Synthesize max function" begin
     g = @cfgrammar begin

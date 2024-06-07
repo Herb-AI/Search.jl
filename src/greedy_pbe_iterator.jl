@@ -101,23 +101,26 @@ end
 # Proof of concept: Limited iterators
 # This type can convert any program iterator into an iterator with a fixed number of enumerations
 # It is essentially a decorator
-struct LimitedIterator <: ProgramIterator
-    iter::ProgramIterator
-    max_enumerations::Int64
-end
+@programiterator mutable LimitedIterator(
+    iter::ProgramIterator,
+    max_enumerations::Int,
+    mod::Module=Main
+)
 
 function Base.iterate(iterator::LimitedIterator)
-    if iterator.max_enumerations == 0
+    if iterator.max_enumerations <= 0
         return nothing
     end
     next, state = Base.iterate(iterator.iter)
-    return next, (1, state)
+    iterator.max_enumerations -= 1
+    return next, state
 end
 
-function Base.iterate(iterator::LimitedIterator, state::Tuple{Int64, Any})
-    if iterator.max_enumerations <= state[1]
+function Base.iterate(iterator::LimitedIterator, state::Any)
+    if iterator.max_enumerations <= 0
         return nothing
     end
-    next, new_state = Base.iterate(iterator.iter, state[2])
-    return next, (1 + state[1], new_state)
+    next, new_state = Base.iterate(iterator.iter, state)
+    iterator.max_enumerations -= 1
+    return next, new_state
 end
