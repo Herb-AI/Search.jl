@@ -26,39 +26,69 @@ mutable struct DecisionTreeAST
     cover::Vector{Set{Int64}}
     features::Vector{Vector{Float64}}
     pred_batch_size::Int64
+end
 
-    DecisionTreeAST(iter::DivideConquerIterator; pred_batch_size::Int64=64) = begin
-        grammar = get_grammar(iter.solver)
-        examples = get_spec(iter)
-        terms = initial_programs!(iter, examples)
-        if isnothing(terms)
-            if iter.max_enumerations == 0
-                throw(DecisionTreeError("Ran out of enumerations for terms"))
-            end
-            throw(DecisionTreeError("terms couldn't be generated or timedout"))
+
+function DecisionTreeAST(iter::DivideConquerIterator; pred_batch_size::Int64=64)
+    grammar = get_grammar(iter.solver)
+    examples = get_spec(iter)
+    terms = initial_programs!(iter, examples)
+    if isnothing(terms)
+        if iter.max_enumerations == 0
+            throw(DecisionTreeError("Ran out of enumerations for terms"))
         end
-        cover = __make_cover(terms, examples, grammar)
+        throw(DecisionTreeError("terms couldn't be generated or timedout"))
+    end
+    cover = __make_cover(terms, examples, grammar)
 
-        pred_gen = Iterators.take(get_pred_iter(iter), iter.max_enumerations)
-        pred_gen = Iterators.filter(pred_gen) do pred
-            input_symbols = collect(keys(examples[1].in))
-            pred_expr = rulenode2expr(pred, grammar)
-            typeof(pred_expr) == Expr || return false
-            any(sym -> sym ∈ input_symbols, __flatten_symbols(pred_expr))
-        end
-        pred_gen = Iterators.map(pred -> freeze_state(pred), pred_gen) # to iterate over RuleNodes and not StateHoles
-        pred_gen = Iterators.Stateful(pred_gen)
+    pred_gen = Iterators.take(get_pred_iter(iter), iter.max_enumerations)
+    pred_gen = Iterators.filter(pred_gen) do pred
+        input_symbols = collect(keys(examples[1].in))
+        pred_expr = rulenode2expr(pred, grammar)
+        typeof(pred_expr) == Expr || return false
+        any(sym -> sym ∈ input_symbols, __flatten_symbols(pred_expr))
+    end
+    pred_gen = Iterators.map(pred -> freeze_state(pred), pred_gen) # to iterate over RuleNodes and not StateHoles
+    pred_gen = Iterators.Stateful(pred_gen)
 
-        new(
-            nothing,
-            iter,
-            terms,
-            Vector{RuleNode}(),
-            pred_gen,
-            cover,
-            Vector{Vector{Float64}}(undef, length(iter.spec)),
-            pred_batch_size
+    DecisionTreeAST(
+        nothing,
+        iter,
+        terms,
+        Vector{RuleNode}(),
+        pred_gen,
+        cover,
+        Vector{Vector{Float64}}(undef, length(iter.spec)),
+        pred_batch_size
+    )
+end
+
+function Base.length(AST::DecisionTreeAST)
+    if AST.tree isa DecisionTreeInternal
+        left = DecisionTreeAST(
+            AST.tree.true_branch,
+            AST.iter,
+            AST.terms,
+            AST.preds,
+            AST.pred_gen,
+            AST.cover,
+            AST.features,
+            AST.pred_batch_size
         )
+        right = DecisionTreeAST(
+            AST.tree.false_branch,
+            AST.iter,
+            AST.terms,
+            AST.preds,
+            AST.pred_gen,
+            AST.cover,
+            AST.features,
+            AST.pred_batch_size
+        )
+        return 1 + length(AST.preds[AST.tree.pred_index]) + length(left) + length(right)
+    else
+        term_index = AST.tree.term_index
+        return Base.length(AST.terms[term_index])
     end
 end
 
@@ -122,7 +152,6 @@ function __update_features!(state::DecisionTreeAST, new_pred::RuleNode)
     spec = get_spec(state.iter)
     grammar = get_grammar(state.iter.solver)
     xx = state.features
-
     for (i, ex) ∈ enumerate(spec)
         if !isassigned(xx, i)
             xx[i] = Vector{Float64}()
@@ -137,7 +166,7 @@ end
 
 
 function build_tree(X::Vector{Vector{Float64}}, covers::Vector{Set{Int64}})::Union{AbstractDecisionTreeNode,Nothing}
-    dt = __build_tree(Set(1:length(X)), X, covers, Set(1:length(X[1])))
+    dt = __build_tree(Set(1:length(X)), X, covers, OrderedSet(1:length(X[1])))
     if isnothing(dt)
         return nothing
     end
@@ -178,14 +207,12 @@ end
 
 function __dt2expr(tree::DecisionTreeLeaf, terms::Vector{RuleNode}, preds::Vector{RuleNode}, grammar::AbstractGrammar)
     term = rulenode2expr(terms[tree.term_index], grammar)
-    expr = quote
-        $term
-    end
+    expr = isa(term, Expr) ? term : :($term)
     return Base.remove_linenums!(expr)
 end
 
 
-function __build_tree(pts::Set{Int64}, X::Vector{Vector{Float64}}, covers::Vector{Set{Int64}}, preds::Set{Int64})::Union{AbstractDecisionTreeNode,Nothing}
+function __build_tree(pts::Set{Int64}, X::Vector{Vector{Float64}}, covers::Vector{Set{Int64}}, preds::OrderedSet{Int64})::Union{AbstractDecisionTreeNode,Nothing}
     #check if a term covers all the indices
     for (i, cover) ∈ enumerate(covers)
         if issubset(pts, cover) # term t is a leaf

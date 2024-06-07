@@ -13,13 +13,14 @@ end
     term_iter::ProgramIterator,
     pred_iter::ProgramIterator,
     max_enumerations::Int=10000,
+    pred_batch_size::Int=2000,
     max_time::Float64=60.0,
     mod::Module=Main
 ) <: DivideConquerIterator
 
 function Base.iterate(iter::GreedyPBEIterator)
     try
-        AST = DecisionTreeAST(iter, pred_batch_size=2000)
+        AST = DecisionTreeAST(iter, pred_batch_size=iter.pred_batch_size)
         learn_tree!(AST)
         return dt2expr(AST), AST
     catch ex
@@ -70,7 +71,7 @@ function initial_programs!(iter::GreedyPBEIterator, examples::Vector{IOExample})
         cover = Set{Int64}()
         for (prob_idx, pb) ∈ enumerate(subproblems)
             how_many = evaluate(pb, expr, sym_table, allow_evaluation_errors=true)
-            if how_many == 1
+            if how_many == 1 # solves current problem
                 push!(cover, prob_idx)
             end
         end
@@ -85,7 +86,8 @@ function initial_programs!(iter::GreedyPBEIterator, examples::Vector{IOExample})
         #stopping criteria
         if iter.max_enumerations == 0 || time() - start_time > iter.max_time
             return nothing
-        elseif length(unsolved) == 0
+        end
+        if length(unsolved) == 0
             return programs
         end
         iter.max_enumerations -= 1
