@@ -121,7 +121,7 @@ function get_spec(iter::DivideConquerIterator)::Vector{IOExample}
 end
 
 
-function dt2expr(AST::DecisionTreeAST)::Expr
+function dt2expr(AST::DecisionTreeAST)
     if isnothing(AST.tree)
         throw(DecisionTreeError("There is no tree to convert"))
     end
@@ -207,8 +207,7 @@ end
 
 function __dt2expr(tree::DecisionTreeLeaf, terms::Vector{RuleNode}, preds::Vector{RuleNode}, grammar::AbstractGrammar)
     term = rulenode2expr(terms[tree.term_index], grammar)
-    expr = isa(term, Expr) ? term : :($term)
-    return Base.remove_linenums!(expr)
+    return term
 end
 
 
