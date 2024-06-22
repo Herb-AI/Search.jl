@@ -1,7 +1,7 @@
 
 
 
-function satisfies_examples(spec::Vector{IOExample}, g::AbstractGrammar, expr::Any, symboltable::SymbolTable)::Set{Number}
+function satisfies_examples(spec::Vector{IOExample}, expr::Any, symboltable::SymbolTable, allow_evaluation_errors::Bool=true)::Set{Number}
     satisfied = Set{Number}()
     for (i, example) ∈ enumerate(spec)
         try
@@ -10,7 +10,10 @@ function satisfies_examples(spec::Vector{IOExample}, g::AbstractGrammar, expr::A
                 push!(satisfied, i)
             end
         catch e
-            println(e)
+            # Throw the error again if evaluation errors aren't allowed
+            eval_error = EvaluationError(expr, example.in, e)
+            allow_evaluation_errors || throw(eval_error)
+            break
         end
     end
     return satisfied
@@ -33,6 +36,7 @@ end
     term_iter::ProgramIterator,
     pred_iter::ProgramIterator,
     max_enumerations::Int=10000,
+    fraction::Int = 5,
     mod::Module=Main
 ) <: ProgramIterator
 
@@ -44,7 +48,7 @@ function Base.iterate(iter::SubsetIterator)
 
     state["programs"] = Dict{Set{Number}, RuleNode}()
     g = get_grammar(iter.solver)
-    satisfied = satisfies_examples(iter.spec, g, rulenode2expr(program, g), SymbolTable(g, iter.mod))
+    satisfied = satisfies_examples(iter.spec, rulenode2expr(program, g), SymbolTable(g, iter.mod))
     state["programs"][satisfied] = freeze_state(program)
 
     return (program, state)
@@ -56,7 +60,8 @@ function Base.iterate(iter::SubsetIterator, state)
     state["enums"] = state["enums"]+1
     
     g = get_grammar(iter.solver)
-    satisfied = satisfies_examples(iter.spec, g, rulenode2expr(program, g), SymbolTable(g, iter.mod))
+    satisfied = satisfies_examples(iter.spec, rulenode2expr(program, g), SymbolTable(g, iter.mod))
+    
     if !haskey(state["programs"], satisfied)
 
         state["programs"][satisfied] = freeze_state(program)
@@ -65,29 +70,9 @@ function Base.iterate(iter::SubsetIterator, state)
 
         list_programs::Vector{Tuple{RuleNode, Set{Number}}} = [(v, k) for (k, v) in state["programs"]]
         smallest_subset, subset_result = find_smallest_subset(Set{Number}(1:length(iter.spec)), list_programs)
-        println("small subset len: ", smallest_subset)
-        for i in smallest_subset
-            expr = rulenode2expr(i[1], g)
-            println(expr)
-        end
-        println("decision _ tree")
-        candidate_program = decision_tree(iter.spec, g, sym_start, sym_bool, smallest_subset, state["enums"]/5)
-        
-        expr = rulenode2expr(program, g)
-        expr2 = rulenode2expr(candidate_program, g)
-        
-        println("prog: ", expr)
-        println("cand prog: ")
-        println(expr2)
-        println("programs: ")
-        for i in state["programs"]
-            expr = rulenode2expr(i[2], g)
-            println(expr)
-        end
-
-        println("before: ", smallest_subset)
-        println(" after: ", candidate_program)
-        println()
+        candidate_program, new_grammar = decision_tree(iter.spec, g, sym_start, sym_bool, smallest_subset, state["enums"] / iter.fraction)
+        iter.solver.grammar = new_grammar
+        state["grammar"] = new_grammar
         return (candidate_program, state)
     end
     return (program, state)
@@ -102,13 +87,15 @@ Base.showerror(io::IO, e::DecisionTreeError) = println(io, e.message)
 using DecisionTree
 function decision_tree(
     spec::Vector{IOExample},
-    grammar::AbstractGrammar,
+    old_grammar::AbstractGrammar,
     sym_start::Symbol,
     sym_bool::Symbol,
     solutions::Vector{Tuple{RuleNode, Set{Number}}},
     n_predicates
-)::RuleNode
-    return_type = grammar.rules[grammar.bytype[sym_start][1]]    
+)::Tuple{RuleNode, AbstractGrammar}
+    grammar = old_grammar
+    return_type = grammar.rules[grammar.bytype[sym_start][1]]
+
     idx = findfirst(r -> r == :($sym_bool ? $return_type : $return_type), grammar.rules)
     # add condition rule for easy access when outputing
     if isnothing(idx)
@@ -118,9 +105,11 @@ function decision_tree(
 
     labels = get_labels(solutions, spec)
     examples = get_examples(labels, spec )
-    
-    # predicates = generate_rand_predicates(grammar, sym_bool, n_predicates)
     predicates = enumerate_predicates(grammar, sym_bool, n_predicates)
+
+    if length(predicates) == 0
+        return solutions[1][1], grammar
+    end
     features = get_features(grammar, examples, predicates)
     features = float.(features)
 
@@ -131,8 +120,7 @@ function decision_tree(
     candidate_program = construct_final(model.root.node, idx, solutions, predicates)
 
     candidate_program = freeze_state(candidate_program)
-    println("result DT: ", candidate_program)
-    return candidate_program
+    return candidate_program, grammar
 end
 
 function construct_final(

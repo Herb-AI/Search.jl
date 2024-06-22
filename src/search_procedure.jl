@@ -42,6 +42,7 @@ function synth(
     
     for (i, candidate_program) ∈ enumerate(iterator)
         # Create expression from rulenode representation of AST
+        
         expr = rulenode2expr(candidate_program, grammar)
 
         # Evaluate the expression
