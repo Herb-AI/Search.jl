@@ -1,14 +1,20 @@
-function get_labels_examples(
+function get_labels(
     solutions::Vector{Tuple{RuleNode, Set{Number}}},
     IO_examples::Vector{IOExample}
-)::Tuple{Vector{String}, Vector{IOExample}}
+)::Vector{String}
     labels = fill("", length(IO_examples))
     for (program_idx, s) in enumerate(solutions)
         for i in s[2]
-            labels[i] *= string(program_idx)
+            labels[i] *= string(program_idx)*"-"
         end
     end
+    return labels
+end
 
+function get_examples(
+    labels::Vector{String},
+    IO_examples::Vector{IOExample}
+)::Vector{IOExample}
     examples = Vector{IOExample}()
     for (i, l) in enumerate(labels)
         if !isempty(l)
@@ -17,55 +23,77 @@ function get_labels_examples(
     end
     filter!(l->!isempty(l), labels)
 
-    return (labels, examples)
+    return examples
+end
+
+function add_bool_rules(grammar::AbstractGrammar, sym_start::Symbol)::Symbol
+    
+    sym_bool = :(ntBool)
+    add_rule!(grammar, :($sym_bool = $sym_start == 1))
+    add_rule!(grammar, :($sym_bool = $sym_start == 0))
+    add_rule!(grammar, :($sym_start = $sym_bool ? $sym_start : $sym_start))
+    return sym_bool
 end
 
 using DecisionTree
 function learn_DT(
     problem::Problem{Vector{IOExample}},
-    grammar::AbstractGrammar,
+    old_grammar::AbstractGrammar,
     sym_start::Symbol,
-    sym_bool::Symbol,
+    sym_bool::Union{Symbol, Nothing},
     solutions::Vector{Tuple{RuleNode, Set{Number}}},
-    max_predicates::Int64=1024
+    max_predicates = typemax(10000)
 )::Union{Tuple{RuleNode, AbstractGrammar}, Nothing}
+    start_time = time()
     
     # no solutions to combine with the decision tree -> return nothing
     if isempty(solutions)
         return nothing
     end
-    
+
     # check if the condition rule is contained in the grammar
+    grammar = deepcopy(old_grammar)
+    if isnothing(sym_bool)
+        sym_bool = add_bool_rules(grammar, sym_start)
+    end
     return_type = grammar.rules[grammar.bytype[sym_start][1]]    
     idx = findfirst(r -> r == :($sym_bool ? $return_type : $return_type), grammar.rules)
     # add condition rule for easy access when outputing
     if isnothing(idx)
-        add_rule!(grammar, :($return_type = $sym_bool ? $return_type : $return_type))
+        add_rule!(grammar, :($sym_start = $sym_bool ? $sym_start : $sym_start))
+        # add_rule!(grammar, :($return_type = $sym_bool ? $return_type : $return_type))
         idx = length(grammar.rules)
     end
 
-    symboltable :: SymbolTable = SymbolTable(grammar, Main)
 
-    labels, examples = get_labels_examples(solutions, problem.spec)
+    labels = get_labels(solutions, problem.spec)
+    examples = get_examples(labels, problem.spec )
     
-    n_predicates = 16
+    n_predicates = max_predicates
     candidate_program = nothing
+    
+    symboltable :: SymbolTable = SymbolTable(grammar, Main)
     while n_predicates <= max_predicates
         println("pred: ", n_predicates)
-        (features, predicates) = get_features_predicates(grammar, sym_bool, examples, n_predicates)
+        # predicates = generate_rand_predicates(grammar, sym_bool, n_predicates)
+        t = time()
+        predicates = enumerate_predicates(grammar, sym_bool, n_predicates)
+        features = get_features(grammar, examples, predicates)
+        println("time to enum predicates and get features: ", time()-t)
         features = float.(features)
 
         # init and fit model with features and labels
         model = DecisionTree.DecisionTreeClassifier()
         DecisionTree.fit!(model, features, labels)
 
-        candidate_program = construct_final(model.root.node, idx, solutions, predicates, false)
+        candidate_program = construct_final(model.root.node, idx, solutions, predicates)
         expr = rulenode2expr(candidate_program, grammar)
-        println("final_program expr: ", expr)
+        # println("final_program expr: ", expr)
 
         score = evaluate(Problem(examples), expr, symboltable, allow_evaluation_errors=true)
         if score == 1
             candidate_program = freeze_state(candidate_program)
+            println("FinishedDT time: ", time() - start_time)
             return (candidate_program, grammar)
         else 
             n_predicates *= 4
@@ -73,6 +101,7 @@ function learn_DT(
     end
 
     candidate_program = freeze_state(candidate_program)
+    println("FinishedDT time: ", time() - start_time)
     return (candidate_program, grammar)
 end
 
@@ -84,17 +113,20 @@ function construct_final(
     prune::Bool=true
 )::RuleNode
     if DecisionTree.is_leaf(node)
-        idx = Int(node.majority[1])-48
+        labels = split(node.majority, "-")
+        idx = parse(Int, labels[1])
         return solutions[idx][1]
     end
 
     # check if two leafs can be combined
     if prune == true && DecisionTree.is_leaf(node.left) && DecisionTree.is_leaf(node.right)
         if occursin(node.left.majority, node.right.majority) == true
-            idx = Int(node.left.majority[1])-48
+            labels = split(node.left.majority, "-")
+            idx = parse(Int, labels[1])
             return solutions[idx][1]
         elseif occursin(node.right.majority, node.left.majority) == true
-            idx = Int(node.right.majority[1])-48
+            labels = split(node.right.majority, "-")
+            idx = parse(Int, labels[1])
             return solutions[idx][1]
         end
     end
@@ -107,17 +139,11 @@ function construct_final(
     return condition
 end
 
-function get_features_predicates(
+function generate_rand_predicates(
     grammar::AbstractGrammar,
     sym_bool::Symbol,
-    examples::Vector{IOExample}, 
-    n_predicates::Int64,
-    mod::Module=Main,
-    allow_evaluation_errors::Bool=true
-)::Tuple{Matrix, Vector{RuleNode}}
-    symboltable :: SymbolTable = SymbolTable(grammar, mod)
-    features = trues(length(examples), n_predicates)
-    
+    n_predicates::Int64
+)::Vector{RuleNode}
     # generate random predicates
     predicates = Vector{RuleNode}()
     while length(predicates) < n_predicates
@@ -127,11 +153,58 @@ function get_features_predicates(
             push!(predicates, rand_rn)
         end
     end
+    return predicates
+end
 
-    # println("predicates: ")
-    # for (i, p) in enumerate(predicates)
-    #     println(i, " ", rulenode2expr(p, grammar))
-    # end
+function collect_rules_from_rulenode(rn::RuleNode, nodes::Set{Int64} = Set{Int64}())::Set{Int64}
+    push!(nodes, rn.ind)
+    for child in rn.children
+        collect_rules_from_rulenode(child, nodes)  # Recursively collect nodes from children
+    end
+    return nodes
+end
+
+function enumerate_predicates(
+    grammar::AbstractGrammar,
+    sym_bool::Symbol,
+    n_predicates::Number,
+)::Vector{RuleNode}
+    
+    iterator = BFSIterator(grammar, sym_bool)
+    predicates = Vector{RuleNode}()
+
+    arg_rules = Vector{Int64}()
+    for (i, rule) in enumerate(grammar.rules)
+        if typeof(rule) == Symbol && occursin("_arg_", String(rule))
+            push!(arg_rules, i)
+        end            
+    end
+    for (i, candidate_program) ∈ enumerate(iterator)
+        candidate_program = freeze_state(candidate_program)
+        
+        # add predicate only if contains rule with an argument
+        # if the intersection of arg_rules and rules in candidate_program is >= 1
+        if length(intersect(arg_rules, collect_rules_from_rulenode(candidate_program))) >= 1
+            push!(predicates, candidate_program)
+        end
+        # if length(predicates) >= n_predicates
+        if i >= n_predicates
+            println("num:",length(predicates))
+            break
+        end
+    end
+    return predicates
+end
+
+function get_features(
+    grammar::AbstractGrammar,
+    examples::Vector{IOExample}, 
+    predicates::Vector{RuleNode},
+    mod::Module=Main,
+    allow_evaluation_errors::Bool=true
+)::Matrix
+    symboltable :: SymbolTable = SymbolTable(grammar, mod)
+    features = trues(length(examples), length(predicates))
     
     for (i, e) in enumerate(examples)
         outputs = Vector()
@@ -151,5 +224,5 @@ function get_features_predicates(
         end
         features[i, :] = outputs
     end
-    return (features, predicates)
+    return features
 end

@@ -35,8 +35,10 @@ include("genetic_functions/mutation.jl")
 include("genetic_functions/crossover.jl")
 include("genetic_functions/select_parents.jl")
 include("genetic_search_iterator.jl")
+
 include("smallest_subset.jl")
 include("learn_dt.jl")
+include("subset_iterator.jl")
 
 include("random_iterator.jl")
 
@@ -57,10 +59,12 @@ export
   smallest_subset,
   greedy_set_cover,
   find_smallest_subset,
-  generate_predicates,
+  generate_rand_predicates,
+  enumerate_predicates,
   predicates_on_args,
   learn_DT,
   satisfies_examples,
+  SubsetIterator,
 
   SynthResult,
   optimal_program,

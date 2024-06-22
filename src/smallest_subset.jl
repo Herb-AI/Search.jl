@@ -77,37 +77,38 @@ function smallest_subset(
     iterator::ProgramIterator;
     shortcircuit::Bool=false, 
     allow_evaluation_errors::Bool=true,
-    max_time = typemax(Int),
-    max_enumerations = typemax(Int),
+    max_time = typemax(Int64),
+    max_enumerations = typemax(Int64),
     mod::Module=Main
 )::Tuple{Vector{Tuple{RuleNode, Set{Number}}}, SubsetSearchResult}
     start_time = time()
     grammar = get_grammar(iterator.solver)
-    
     symboltable :: SymbolTable = SymbolTable(grammar, mod)
 
-    programs = Vector{Tuple{RuleNode, Set{Number}}}()
+    programs = Dict{Set{Number}, RuleNode}()
 
     for (i, candidate_program) ∈ enumerate(iterator)
-
         expr = rulenode2expr(candidate_program, grammar)
         correct_examples = satisfies_examples(problem, expr, symboltable, shortcircuit=shortcircuit, allow_evaluation_errors=allow_evaluation_errors)
         
         if length(correct_examples) == length(problem.spec)
+            println(i)
             candidate_program = freeze_state(candidate_program)
             println("satisfies all: ", correct_examples)
             return (([(candidate_program, correct_examples)]), full_cover)
-        elseif length(correct_examples) > 0
-            candidate_program = freeze_state(candidate_program)
-            push!(programs, (candidate_program, correct_examples))
+        elseif length(correct_examples) > 0 && !haskey(programs, correct_examples)
+            programs[correct_examples] = freeze_state(candidate_program)
         end
 
         if i > max_enumerations || time() - start_time > max_time
-            println("stoping: ")
+            println("STOPING!  : ", i, ", time: ", time() - start_time)
             break;
         end
+
     end
-    return find_smallest_subset(Set{Number}(1:length(problem.spec)), programs)
+    list_programs::Vector{Tuple{RuleNode, Set{Number}}} = [(v, k) for (k, v) in programs]
+    println("len prog: ",length(list_programs))
+    return find_smallest_subset(Set{Number}(1:length(problem.spec)), list_programs)
 end
 
 
