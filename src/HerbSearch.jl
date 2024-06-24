@@ -38,6 +38,9 @@ include("genetic_search_iterator.jl")
 
 include("random_iterator.jl")
 
+include("anti-unification_functions/anti-unification.jl")
+include("anti-unification_iterator.jl")
+
 export 
   ProgramIterator,
   @programiterator,
@@ -77,5 +80,8 @@ export
   misclassification,
   validate_iterator,
   sample,
-  rand
+  rand,
+
+  AntiunificationIterator
+
 end # module HerbSearch
