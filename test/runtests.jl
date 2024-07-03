@@ -23,6 +23,7 @@ Random.seed!(1234)
     include("test_ordered.jl")
     include("test_contains.jl")
     include("test_unique.jl")
+    include("test_grammar_splitting.jl")
 
     # Excluded because it contains long tests
     # include("test_realistic_searches.jl")
